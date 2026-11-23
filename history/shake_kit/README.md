@@ -28,23 +28,30 @@ In the app:
     }
     .commands { ShakeKitCommands() }   // Help › Report a Bug… (⌥⌘B)
 
-It does nothing unless the build opts in, with `ShakeKitScope` (`public_repo`,
-or `repo` for a private repository) or `ShakeKitClientID` (the OAuth App to
-sign in with) in its Info.plist; an empty value takes the default. The
-owner's apps stamp one in from CI in **every build**, production included.
+ShakeKit has no sign-in of its own. It reports with the sign-in the host's
+apps share (`GitHubSharedSignIn`): the build needs its Info.plist keys
+(`GitHubSharedClientID`, `GitHubSharedKeychainGroup`, `GitHubSharedLockGroup`)
+and entitlements granting that keychain group and app group. The owner's apps
+stamp them in from CI in **every build**, production included. A build
+without them gets the view back untouched and no menu item. Set
+`ShakeKitScope` to `repo` if the repository is private (the default is
+`public_repo`).
 
-A shake opens a report only for someone already signed in (the apps' shared
-sign-in, or ShakeKit's own), so it never surprises anyone else. To let people
-start it themselves, give them a Report a Bug button that calls
-`ShakeReport.request()`; on a Mac, `ShakeKitCommands` adds one to the Help
-menu. A deliberate request offers the sign-in when needed.
+Only someone signed in to the shared sign-in on the device (through the
+owner's issues app) can report. For anyone else a shake does nothing; a
+deliberate request (a Report a Bug button calling `ShakeReport.request()`,
+or, on a Mac, Help › Report a Bug… from `ShakeKitCommands`) says to sign in
+there. ShakeKit runs on Apple's systems only for now.
+
+A view that needs the shake itself (a "shake to leave", say) pauses
+ShakeKit's with `.shakeToReportPaused(true)` while it's showing.
 
 On iOS, ShakeKit hears the shake through an override of `UIWindow`'s
 `motionEnded`, which applies to every window of the app; it calls `super`, so
 the app's own handling still runs.
 
-0.1.0 shipped `GitHubAuth`, `GitHubIssues` and `IssueComposer`; `ShakeKit`
-comes in 0.2.0. `swift test` runs on Linux and on a Mac.
+0.1.0 shipped `GitHubAuth`, `GitHubIssues` and `IssueComposer`; 0.2.0
+`ShakeKit`; 0.3.0 makes the shared sign-in its only one. `swift test` runs on Linux and on a Mac.
 
 ## Releasing
 

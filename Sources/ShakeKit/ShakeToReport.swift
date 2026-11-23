@@ -1,20 +1,38 @@
-#if canImport(SwiftUI)
+// ShakeKit's views, on Apple's systems only for now (Isomer's hosts lack
+// the shake, the screenshot and the keychain it needs).
+#if canImport(UIKit) || canImport(AppKit)
 import GitHubAuth
 import IssueComposer
 import SwiftUI
 
 extension View {
     /// A shake (or Help › Report a Bug… on a Mac, with `ShakeKitCommands`)
-    /// opens a bug report, filed as an issue in `repository` ("owner/name").
-    /// It does nothing unless `configuration` is on: by default, unless the
-    /// app's Info.plist opts in (`ShakeKitConfiguration.from(info:)`).
+    /// opens a bug report, filed as an issue in `repository` ("owner/name"),
+    /// for someone signed in to the host's shared sign-in on this device. A
+    /// build that carries no shared sign-in gets the view back untouched.
     @ViewBuilder
     public func shakeToReport(repository: String, configuration: ShakeKitConfiguration = .main) -> some View {
-        if configuration.isEnabled {
+        if ShakeReport.isOffered {
             modifier(ShakeToReport(repository: repository, configuration: configuration))
         } else {
             self
         }
+    }
+
+    /// While `paused` is true, ShakeKit ignores shakes, for a view that needs
+    /// the shake itself. Put it anywhere below `.shakeToReport`; while any
+    /// such view says true, shakes are ignored. The Mac's menu command and
+    /// `ShakeReport.request()` still work.
+    public func shakeToReportPaused(_ paused: Bool = true) -> some View {
+        preference(key: ShakesPausedKey.self, value: paused)
+    }
+}
+
+/// Whether any view below asks for shakes to be ignored.
+struct ShakesPausedKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 
@@ -27,46 +45,36 @@ struct ShakeToReport: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onPreferenceChange(ShakesPausedKey.self) { paused in
+                report.shakesPaused = paused
+            }
             .onReceive(NotificationCenter.default.publisher(for: ShakeReport.requested)) { notification in
                 report.present(notification.object as? ShakeReport.Trigger ?? .request)
             }
             .sheet(isPresented: $report.isPresented) {
-                ShakeReportSheet(report: report)
+                NewIssueSheet(model: report.composer, title: "Report a Bug") {
+                    ReportDetails(report: report)
+                }
+            }
+            .alert("Report a Bug", isPresented: $report.showsSignInNotice) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(ShakeReport.signInNotice)
             }
     }
 }
 
 /// Help › Report a Bug… (⌥⌘B), for a Mac (and an iPad's keyboard), where
-/// there's no shake.
-/// Left out when ShakeKit is off (a release build that doesn't opt in).
+/// there's no shake. Left out of a build that carries no shared sign-in.
 public struct ShakeKitCommands: Commands {
-    let configuration: ShakeKitConfiguration
-
-    public init(configuration: ShakeKitConfiguration = .main) {
-        self.configuration = configuration
-    }
+    public init() {}
 
     public var body: some Commands {
         CommandGroup(after: .help) {
-            if configuration.isEnabled {
+            if ShakeReport.isOffered {
                 Button("Report a Bug…") { ShakeReport.request() }
-                .keyboardShortcut("b", modifiers: [.command, .option])
+                    .keyboardShortcut("b", modifiers: [.command, .option])
             }
-        }
-    }
-}
-
-/// The composer once signed in, the sign-in before.
-struct ShakeReportSheet: View {
-    @Bindable var report: ShakeReport
-
-    var body: some View {
-        if report.credentials.state == .signedIn {
-            NewIssueSheet(model: report.composer, title: "Report a Bug") {
-                ReportDetails(report: report)
-            }
-        } else {
-            SignInSheet(credentials: report.credentials)
         }
     }
 }
@@ -102,55 +110,7 @@ struct ReportDetails: View {
                 if report.configuration.scope == "public_repo" {
                     Text("This issue and its attachments will be public.")
                 }
-                Text("Filed in \(report.repository).")
-                if !report.usesSharedSignIn {
-                    Button("Sign Out of GitHub") { report.credentials.signOut() }
-                        .buttonStyle(.borderless)
-                }
-            }
-        }
-    }
-}
-
-/// Signing in by code: the code to enter at github.com/login/device.
-struct SignInSheet: View {
-    @Bindable var credentials: GitHubCredentials
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    switch credentials.state {
-                    case .signedOut:
-                        Text("Sign in to GitHub to report a bug. The issue is filed as you.")
-                        Button("Sign In to GitHub") { credentials.signInByCode() }
-                    case .asking:
-                        ProgressView()
-                    case .entering(let code):
-                        Text("Enter this code at GitHub:")
-                        Text(code.userCode)
-                            .font(.largeTitle.monospaced())
-                            .textSelection(.enabled)
-                        Link("Open \(code.verificationURI.host() ?? "GitHub")", destination: code.verificationURI)
-                    case .signedIn:
-                        EmptyView()
-                    }
-                    if let problem = credentials.problem {
-                        Label(problem, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                    }
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("Report a Bug")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        credentials.cancelSignIn()
-                        dismiss()
-                    }
-                }
+                Text("Filed in \(report.repository), as you, through the sign-in your apps share.")
             }
         }
     }

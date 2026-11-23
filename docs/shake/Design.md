@@ -74,18 +74,20 @@ their view models are tested on Linux too.
 
 - **iOS and iPadOS.** A shake (`motionEnded(.motionShake)`, reaching the
   key window through the responder chain) opens the composer, **only for
-  someone signed in** (through the apps' shared sign-in, or ShakeKit's
-  own). Nobody else's shake does anything, so ShakeKit can be in every
-  build without springing a sign-in on people. Shakes that come in while
-  it's up are ignored.
+  someone signed in to the apps' shared sign-in on this device** (section
+  5). Nobody else's shake does anything, so ShakeKit can be in every build.
+  Shakes that come in while
+  it's up are ignored, and so are shakes while a view that needs the shake
+  itself says so (`.shakeToReportPaused(true)`, a preference read by the
+  root modifier).
 - **macOS.** No shake: `ShakeKitCommands()` adds the menu command and its
   shortcut.
-- **Other hosts:** later. The API is kept portable, so they can follow
-  through Isomer.
+- **Other hosts:** off for now (ShakeKit compiles only where UIKit or AppKit
+  is). Isomer would give them the shake, a screenshot and a keychain first.
 - `ShakeReport.request()` opens it deliberately, for the app's own "Report
-  a Bug" button; so does the Mac's menu command. A deliberate request opens
-  it signed in or not, offering ShakeKit's own sign-in: that's how someone
-  chooses to start it.
+  a Bug" button; so does the Mac's menu command. For someone not signed in
+  to the shared sign-in, it says "Sign in to Shireworks on this device to
+  report bugs." ShakeKit never shows a sign-in.
 - `ShakeKitConfiguration` (optional): which log subsystems to include,
   the time window, size caps, extra redaction rules, and the issue's
   labels.
@@ -180,69 +182,44 @@ without that attachment, with a note saying so. Every reporter needs write
 access to the app's repository; that's the owner and the app's
 collaborators, which fits who reports bugs.
 
-## 5. Sign-in (`GitHubAuth`)
+## 5. Sign-in: the apps' shared sign-in only
 
-Device flow, with the owner's OAuth App, so the issue is opened as the
-person who signs in. The person acts with their own access, under the
-scope the app asks for.
+The owner decided (2026-11-23): **ShakeKit has no sign-in of its own in the
+apps.** The only way to report is to be signed in to the owner's issues app
+(Shireworks) on the same phone or computer. Its sign-in is shared through a
+keychain group the owner's apps all carry (`GitHubSharedSignIn`), renewed
+under a lock in an app group they share too. Signing in and out happen only
+in that app.
 
-- **Scope, per app:** `public_repo` when the app's issue repository is
-  public, `repo` only when it's private (which reaches every repository the
-  person can). It's a setting in each app (`ShakeKitScope`), stamped like the
-  client id.
-- **The sign-in screen:** it shows the code and "Open
-  github.com/login/device", and polls until the person has entered the
-  code.
-- **Tokens:**
-  - The owner's OAuth App has token expiration on: a token lasts 8 hours
-    and comes with a refresh token (about 181 days), which `GitHubAuth`
-    uses to renew it. Expiry stays optional, for an OAuth App without
-    expiration.
+- **The build:** a build carries the shared sign-in when CI stamps its keys
+  (`GitHubSharedClientID`, `GitHubSharedKeychainGroup`,
+  `GitHubSharedLockGroup`) into the Info.plist, and the entitlements grant
+  both groups. That's every build of the owner's apps. A build without them
+  offers no report and no menu item.
+- **Reporting:** someone signed in there whose token covers the scope
+  (`ShakeKitScope`: `public_repo` by default, `repo` for a private
+  repository) can report; the issue is opened as them. Anyone else: a shake
+  does nothing, and a deliberate request says to sign in to Shireworks.
+- **Renewal:** `GitHubCredentials` renews the shared token under the shared
+  lock when it runs out, and keeps the renewed pair at once.
   - Tested 2026-11-23: the refresh needs no client secret (`client_id`,
     `grant_type=refresh_token` and `refresh_token` alone). It rotates both
-    tokens: the old access token is refused at once, so the renewed pair is
-    kept before it's used.
-  - The token goes in the app's keychain, in the host app's own access
-    group. It must never be a group shared with another app's GitHub
-    sign-in, or one sign-in would replace the other.
-  - It's keyed by the client id, and never printed or logged.
-- **Sign Out** deletes the token from the keychain. Revoking it on GitHub
-  needs the OAuth App's client secret, which never ships in an app, so the
-  sheet says where to revoke it: GitHub › Settings › Applications.
-- **Names and behaviour** follow the owner's existing GitHub client, so the
-  two can merge:
-  - `GitHubDeviceFlow`: takes a scope, honours `interval` and `slow_down`,
-    and refreshes with `grant_type=refresh_token` when there's a refresh
-    token;
-  - `GitHubToken`, with optional expiry;
-  - `TokenStore`, with `KeychainTokenStore` and `MemoryTokenStore`;
-  - `GitHubCredentials`: renews before expiry when it can, and forgets the
-    token on a 401.
+    tokens: the old access token is refused at once.
+- **`GitHubAuth` itself** still does device flow, token stores and renewal,
+  for the issues app and anyone else; ShakeKit just never signs in with it.
 
-  The owner's issues browser can move onto `GitHubAuth` and
-  `GitHubIssues` once they're released.
-
-**A sign-in the host's apps share.** Where the host carries one (the
-`GitHubShared…` keys in its Info.plist, stamped by its CI, and the keychain
-and app groups they name), ShakeKit files with it, so someone signed in to
-one of the owner's apps needn't sign in again. That only happens when its
-token covers ShakeKit's scope; otherwise ShakeKit uses its own sign-in.
-ShakeKit never signs in to the shared one, or signs out of it: asking for a
-narrower scope would replace the token the other apps rely on.
-
-**The apps** (both named `logan-shire-shake`; tell them apart by client
+**The owner's apps for ShakeKit itself** (both named `logan-shire-shake`; tell them apart by client
 id, which is public, not a secret):
 
 | App | Client id | Used for |
 | --- | --- | --- |
-| OAuth App | `Ov23liV9P5ku0ntejoEc` | Sign-in today: device flow, attachments inline |
+| OAuth App | `Ov23liV9P5ku0ntejoEc` | Unused since the shared sign-in became the only one; kept for apps on devices without the issues app |
 | GitHub App | `Iv23liWyhH9QbD6m7yx3` | Later, when GitHub lets App tokens upload attachments (TODO.md) |
 
 The OAuth App has this repository as its homepage and callback URL (device
 flow never uses the callback), **Enable Device Flow** on, and no client
-secret. Its client id is ShakeKit's default `ShakeKitClientID`. An app can
-override it, and sets its scope as `ShakeKitScope`, in its Info.plist, both
-stamped by its CI.
+secret. No ShakeKit code uses it now: it's kept for a future where apps
+report from devices without the issues app.
 
 Tested 2026-11-23: the OAuth App's `gho_` token, with scope `public_repo`,
 uploaded to user-attachments against this repository (201) and got a
@@ -265,11 +242,10 @@ uploaded to user-attachments against this repository (201) and got a
 - **No network until the composer opens:** no analytics and no crash
   hooks. Screenshots and logs stay in memory (or the app's container, for
   a kept draft), and are dropped once the issue is created.
-- **Every build:** in the owner's apps, CI stamps `ShakeKitScope` (or
-  `ShakeKitClientID`) into every build, production included (the owner,
-  2026-11-23). A build without either offers no report at all. In a build
-  with it, a shake shows nothing to anyone who isn't signed in; reporting
-  starts only when someone is signed in or asks for it themselves.
+- **Every build:** in the owner's apps, CI stamps the shared sign-in's
+  keys into every build, production included (the owner, 2026-11-23). Only
+  someone signed in to the issues app on the same device can report;
+  nobody else sees anything but, if they ask, how to sign in.
 
 ## 7. Packaging and conventions (as update_kit)
 
@@ -305,11 +281,11 @@ uploaded to user-attachments against this repository (201) and got a
 4. **Each app:** its owner integrates it in a pull request of their own,
    with:
    - the modifier, and the commands on a Mac;
-   - its scope in Info.plist (`ShakeKitScope`: `public_repo`, or `repo` for
-     a private repository).
+   - the shared sign-in's Info.plist keys and its keychain and app group
+     entitlements, stamped by CI into every build;
+   - `ShakeKitScope` set to `repo` if its repository is private.
 
-   An OAuth App isn't installed on repositories: the person's own access
-   decides where they can file.
+   The person's own access decides where they can file.
 
    The list of apps is kept with the owner, since some are private. The
    public ones: Visor, Playground and Isomer's Storybook.

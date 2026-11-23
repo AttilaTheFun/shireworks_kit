@@ -7,33 +7,17 @@ import Testing
 @testable import ShakeKit
 
 struct ConfigurationTests {
-    @Test func offWithoutInfo() {
-        let configuration = ShakeKitConfiguration.from(info: nil)
-        #expect(!configuration.isEnabled)
-        #expect(!ShakeKitConfiguration.from(info: ["CFBundleName": "App"]).isEnabled)
+    @Test func defaultScopeWithoutInfo() {
+        #expect(ShakeKitConfiguration.from(info: nil).scope == "public_repo")
     }
 
-    @Test func onWhenABuildOptsIn() {
-        let configuration = ShakeKitConfiguration.from(info: ["ShakeKitClientID": "Ov23example", "ShakeKitScope": " repo "])
-        #expect(configuration.isEnabled)
-        #expect(configuration.clientID == "Ov23example")
-        #expect(configuration.scope == "repo")
+    @Test func infoSetsTheScope() {
+        #expect(ShakeKitConfiguration.from(info: ["ShakeKitScope": " repo "]).scope == "repo")
     }
 
-    @Test func anEmptyValueTurnsItOnWithTheDefaults() {
-        let configuration = ShakeKitConfiguration.from(info: ["ShakeKitScope": ""])
-        #expect(configuration.isEnabled)
-        #expect(configuration.clientID == ShakeKitConfiguration.defaultClientID)
-        #expect(configuration.scope == ShakeKitConfiguration.defaultScope)
-    }
-
-    @Test func unfilledValuesCountAsAbsent() {
-        let configuration = ShakeKitConfiguration.from(info: ["ShakeKitClientID": "$(SHAKE_KIT_CLIENT_ID)"])
-        #expect(!configuration.isEnabled)
-    }
-
-    @Test func aConfigurationInCodeIsOn() {
-        #expect(ShakeKitConfiguration().isEnabled)
+    @Test func unfilledOrEmptyScopeTakesTheDefault() {
+        #expect(ShakeKitConfiguration.from(info: ["ShakeKitScope": "$(SHAKE_KIT_SCOPE)"]).scope == "public_repo")
+        #expect(ShakeKitConfiguration.from(info: ["ShakeKitScope": ""]).scope == "public_repo")
     }
 }
 
@@ -129,7 +113,7 @@ struct ShakeReportTests {
         let credentials = GitHubCredentials(clientID: "Ov23example", scope: "public_repo", store: store)
         return ShakeReport(
             repository: "owner/app",
-            configuration: ShakeKitConfiguration(clientID: "Ov23example"),
+            configuration: ShakeKitConfiguration(),
             shared: nil,
             credentials: credentials,
             logSource: FixedLogs(lines: logs),
@@ -149,17 +133,38 @@ struct ShakeReportTests {
         #expect(report.composer.draft.attachments.count == 1)
     }
 
-    @Test func aShakeOpensItOnlyForSomeoneSignedIn() {
+    @Test func signedOutAShakeDoesNothingAndARequestSaysToSignIn() {
         let github = FakeGitHub()
-        let signedOut = GitHubCredentials(clientID: "Ov23example", scope: "public_repo", store: MemoryTokenStore())
+        let signedOut = GitHubCredentials(clientID: "Ov23example", store: MemoryTokenStore(), canSignInByCode: false)
         let report = ShakeReport(
-            repository: "owner/app", configuration: ShakeKitConfiguration(clientID: "Ov23example"), shared: nil,
+            repository: "owner/app", configuration: ShakeKitConfiguration(), shared: nil,
             credentials: signedOut, logSource: FixedLogs(lines: []), draftStore: MemoryDraftStore(),
             send: github.send, screenshot: { Data([1]) })
+        #expect(!report.canReport)
+        report.present(.shake)
+        #expect(!report.isPresented && !report.showsSignInNotice)
+        #expect(report.composer.draft.attachments.isEmpty)
+        report.present(.request)
+        #expect(!report.isPresented)
+        #expect(report.showsSignInNotice)
+    }
+
+    @Test func withoutASharedSignInNothingCanReport() {
+        let report = ShakeReport(
+            repository: "owner/app", configuration: ShakeKitConfiguration(), shared: nil,
+            logSource: FixedLogs(lines: []), draftStore: MemoryDraftStore(), send: FakeGitHub().send,
+            screenshot: { Data([1]) })
+        #expect(report.credentials == nil)
+        #expect(!report.canReport)
+        report.present(.request)
+        #expect(!report.isPresented && report.showsSignInNotice)
+    }
+
+    @Test func aPausedShakeDoesNothingButARequestStillOpens() {
+        let report = report(github: FakeGitHub())
+        report.shakesPaused = true
         report.present(.shake)
         #expect(!report.isPresented)
-        #expect(report.composer.draft.attachments.isEmpty)
-        // Asked for deliberately, it opens, with the sign-in.
         report.present(.request)
         #expect(report.isPresented)
     }

@@ -15,25 +15,33 @@ import AppKit
 #endif
 
 enum Platform {
-    /// The sign-in to file with, and whether it's the shared one: the apps'
-    /// shared sign-in when the host has one, holding a token that covers the
-    /// scope; otherwise ShakeKit's own, in the app's own keychain. ShakeKit
-    /// never signs in to the shared one itself: asking for a narrower scope
-    /// would replace the token every other app relies on.
-    @MainActor
-    static func credentials(configuration: ShakeKitConfiguration, shared: GitHubSharedSignIn?) -> (GitHubCredentials, Bool) {
-        #if canImport(Security)
-        if let shared, let lock = shared.lock,
-           let token = shared.store.token(for: shared.clientID), token.covers(configuration.scope) {
-            let credentials = GitHubCredentials(
-                clientID: shared.clientID, store: shared.store, canSignInByCode: false, renewalLock: lock)
-            return (credentials, true)
-        }
-        let store: TokenStore = KeychainTokenStore(service: configuration.keychainService)
+    /// Whether ShakeKit runs here: on Apple's systems. Elsewhere (Isomer's
+    /// hosts) it stays off until Isomer gives it a shake, a screenshot and a
+    /// keychain.
+    static var isSupported: Bool {
+        #if canImport(UIKit) || canImport(AppKit)
+        return true
         #else
-        let store: TokenStore = MemoryTokenStore()
+        return false
         #endif
-        return (GitHubCredentials(clientID: configuration.clientID, scope: configuration.scope, store: store), false)
+    }
+
+    /// The shared sign-in to file with, and whether its token reaches
+    /// `scope` now; nil where the build carries none or can't reach its lock.
+    /// It never signs in by code: signing in happens in the app that owns the
+    /// shared sign-in, and signing out too.
+    @MainActor
+    static func sharedSignIn(_ shared: GitHubSharedSignIn?, scope: String)
+        -> (credentials: GitHubCredentials, reaches: @MainActor () -> Bool)? {
+        #if canImport(Security) && (canImport(UIKit) || canImport(AppKit))
+        guard let shared, let lock = shared.lock else { return nil }
+        let credentials = GitHubCredentials(
+            clientID: shared.clientID, store: shared.store, canSignInByCode: false, renewalLock: lock)
+        let store = shared.store, clientID = shared.clientID
+        return (credentials, { store.token(for: clientID)?.covers(scope) ?? false })
+        #else
+        return nil
+        #endif
     }
 
     /// The current process's log lines from `since`, from `subsystems`
