@@ -1,0 +1,1 @@
+- README: a pause for a view in a sheet or full-screen cover goes on the presenting view.

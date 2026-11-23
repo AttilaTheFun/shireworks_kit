@@ -44,7 +44,10 @@ or, on a Mac, Help › Report a Bug… from `ShakeKitCommands`) says to sign in
 there. ShakeKit runs on Apple's systems only for now.
 
 A view that needs the shake itself (a "shake to leave", say) pauses
-ShakeKit's with `.shakeToReportPaused(true)` while it's showing.
+ShakeKit's with `.shakeToReportPaused(true)` while it's showing. The pause is a
+SwiftUI preference, and preferences don't cross a presentation: for a view
+shown in a sheet or `fullScreenCover`, put `.shakeToReportPaused(isPresented)`
+on the view that presents it, not inside it.
 
 On iOS, ShakeKit hears the shake through an override of `UIWindow`'s
 `motionEnded`, which applies to every window of the app; it calls `super`, so
