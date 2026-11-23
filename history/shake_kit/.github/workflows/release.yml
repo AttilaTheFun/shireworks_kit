@@ -1,0 +1,100 @@
+# Shake Kit's release proposal (the owner's rule: every release has a proof,
+# even if it's just tests): the tests on Linux and on a Mac, the libraries
+# built for the iOS Simulator, their results made the release's proof
+# (build_tools' tests-proof) and compared with the release before's
+# (proof-diff), then a draft release of the version, which the owner
+# releases in Reviews. The repository is public: GitHub's runners alone.
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to propose (N.N.N)"
+        required: true
+permissions:
+  contents: read
+env:
+  # The shared tools, by tag (AttilaTheFun/build_tools).
+  BUILD_TOOLS_VERSION: v0.4.2
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    container: swift:6.4.2-noble@sha256:23d9b28ad97fb1cf1999edc3a0cb265ee915ed42299a9344e7173d5a6d2b05f4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift build --build-tests
+      - shell: bash
+        run: set -o pipefail; swift test --skip-build 2>&1 | tee linux.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: linux-log, path: linux.log, retention-days: 1 }
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift build --build-tests
+      - shell: bash
+        run: set -o pipefail; swift test --skip-build 2>&1 | tee macos.log
+      # Each library as an app would take it, for the iOS Simulator.
+      - shell: bash
+        run: |
+          set -o pipefail
+          for scheme in GitHubAuth GitHubIssues IssueComposer ShakeKit; do
+            echo "::group::$scheme for the iOS Simulator"
+            xcodebuild build -quiet -scheme "$scheme" -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath "$RUNNER_TEMP/dd"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: macos-log, path: macos.log, retention-days: 1 }
+  proof:
+    needs: [linux, macos]
+    runs-on: ubuntu-24.04
+    container: swift:6.4.2-noble@sha256:23d9b28ad97fb1cf1999edc3a0cb265ee915ed42299a9344e7173d5a6d2b05f4
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: "*-log", path: logs, merge-multiple: true }
+      - shell: bash
+        run: |
+          git clone --quiet --depth 1 --branch "$BUILD_TOOLS_VERSION" https://github.com/AttilaTheFun/build_tools.git "$RUNNER_TEMP/build_tools"
+          swift build -c release --package-path "$RUNNER_TEMP/build_tools" --product tests-proof
+          swift build -c release --package-path "$RUNNER_TEMP/build_tools" --product proof-diff
+          bin="$(swift build -c release --package-path "$RUNNER_TEMP/build_tools" --show-bin-path)"
+          "$bin/tests-proof" --out proof --zip proof.zip --app shake_kit --version "$VERSION" \
+            "linux=Linux (Swift 6.4.2)=logs/linux.log" "macos=macOS 26=logs/macos.log"
+          "$bin/proof-diff" make proof.zip --out proof-diff.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          retention-days: 1
+          path: |
+            proof.zip
+            proof-diff.json
+  propose:
+    needs: proof
+    # A release is only ever of main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: release-files }
+      - shell: bash
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::the version is N.N.N"; exit 1; }
+          ! gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || { echo "::error::v$VERSION exists"; exit 1; }
+          gh release create "v$VERSION" -R "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Shake Kit $VERSION" \
+            --notes "Proposed from $GITHUB_SHA by run $GITHUB_RUN_ID. Its proof (proof.zip) is its tests' results on Linux and macOS, with the libraries built for the iOS Simulator, compared with the release before's (proof-diff.json)." \
+            proof.zip proof-diff.json
