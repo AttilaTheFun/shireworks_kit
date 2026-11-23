@@ -1,0 +1,22 @@
+# Shake Kit's CI. The repository is public, so it runs on GitHub's hosted
+# runners alone: Linux tests on every pull request and on main.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.head_ref) || format('ci-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    container:
+      image: swift:6.4.2-noble@sha256:23d9b28ad97fb1cf1999edc3a0cb265ee915ed42299a9344e7173d5a6d2b05f4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift build --build-tests
+      - run: swift test
