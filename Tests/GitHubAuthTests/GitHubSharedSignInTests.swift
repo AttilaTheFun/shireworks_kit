@@ -40,6 +40,10 @@ import Testing
         }
         let renewed = try await GitHubDeviceFlow.refresh(clientID: "Ov23.example", token: GitHubToken(access: "gho_old", refresh: "r1"), post: post)
         #expect(renewed.scope == "repo,workflow")
+        // A renewal that says no scope keeps the one the token had.
+        let quiet: GitHubDeviceFlow.Post = { _, _ in Data(#"{"access_token": "gho_newer", "refresh_token": "r3", "expires_in": 28800}"#.utf8) }
+        let kept = try await GitHubDeviceFlow.refresh(clientID: "Ov23.example", token: renewed, post: quiet)
+        #expect(kept.scope == "repo,workflow")
         let old = try JSONDecoder().decode(GitHubToken.self, from: Data(#"{"access": "gho_a", "refresh": "r"}"#.utf8))
         #expect(old.scope == nil)
     }

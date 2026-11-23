@@ -115,9 +115,12 @@ public enum GitHubDeviceFlow {
         let answer: TokenAnswer = try decoded(try await post(tokenAddress, [
             "client_id": clientID, "grant_type": "refresh_token", "refresh_token": refresh,
         ]))
-        guard let renewed = self.token(answer, now: Date()) else {
+        guard var renewed = self.token(answer, now: Date()) else {
             throw GitHubError(status: 401, message: "Signed out of GitHub (\(answer.errorDescription ?? answer.error ?? "the token could not be renewed")): sign in again.")
         }
+        // A renewal that says no scope keeps the one granted at sign-in: with none, `covers` would take it to reach
+        // everything.
+        if renewed.scope == nil { renewed.scope = token.scope }
         return renewed
     }
 
