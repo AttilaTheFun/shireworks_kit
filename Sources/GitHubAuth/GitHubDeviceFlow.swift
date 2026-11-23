@@ -4,13 +4,17 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Signing in as the user with a GitHub App's client id alone (no secret,
-/// so an app can do it): a code shown to the user, entered at
-/// github.com/login/device, and the token once they have; renewed with
-/// its refresh token. github.com's two addresses for it answer no other
-/// site's page (no CORS), so a browser can't sign in this way.
+/// Signing in as the user with an OAuth App's or a GitHub App's client id
+/// alone (no secret, so an app can do it): a code shown to the user,
+/// entered at github.com/login/device, and the token once they have. An
+/// OAuth App's token (`gho_`) asks for a scope and never runs out; a
+/// GitHub App's (`ghu_`) has no scope (the App's permissions are its
+/// reach), runs out in eight hours and is renewed with its refresh token.
+/// github.com's two addresses for it answer no other site's page (no
+/// CORS), so a browser can't sign in this way.
 ///
-/// The client id is the host's: its GitHub App's, given to each call.
+/// The client id is the host's: its OAuth App's or GitHub App's, given to
+/// each call, and so is the scope an OAuth App asks for.
 /// `post` sends a form to one of the addresses and gives back GitHub's
 /// JSON (the network's, unless a test answers in its place); `wait` sleeps
 /// between asks.
@@ -50,9 +54,14 @@ public enum GitHubDeviceFlow {
         case failed(String)
     }
 
-    /// The code to show the user.
-    public static func start(clientID: String, now: Date = Date(), post: Post = Self.post) async throws -> DeviceCode {
-        let answer: CodeAnswer = try decoded(try await post(codeAddress, ["client_id": clientID]))
+    /// The code to show the user. `scope`: what an OAuth App's token may
+    /// reach, as GitHub names it (`public_repo`, `repo`; several apart by
+    /// spaces), sent only when given; nil for a GitHub App's, which has
+    /// none.
+    public static func start(clientID: String, scope: String? = nil, now: Date = Date(), post: Post = Self.post) async throws -> DeviceCode {
+        var form = ["client_id": clientID]
+        if let scope { form["scope"] = scope }
+        let answer: CodeAnswer = try decoded(try await post(codeAddress, form))
         guard let device = answer.deviceCode, let user = answer.userCode, let uri = answer.verificationUri else {
             throw GitHubError(status: 0, message: answer.errorDescription ?? answer.error ?? "GitHub gave no code")
         }
@@ -76,8 +85,10 @@ public enum GitHubDeviceFlow {
         }
     }
 
-    /// Waits for the user to enter the code; the token once they have.
-    /// Cancelled with its task; refused, or out of time, it throws.
+    /// Waits for the user to enter the code; the token once they have
+    /// (with no end and no refresh token, an OAuth App's). Cancelled with
+    /// its task; refused, or out of time, it throws. (The scope was the
+    /// code's, asked for at `start`: the polls send none.)
     public static func token(clientID: String, for code: DeviceCode, clock: @Sendable () -> Date = { Date() },
                              post: Post = Self.post, wait: Wait = Self.sleep) async throws -> GitHubToken {
         var interval = code.interval
@@ -96,7 +107,8 @@ public enum GitHubDeviceFlow {
     }
 
     /// A token renewed with its refresh token (a device flow's needs no
-    /// secret).
+    /// secret): a GitHub App's. An OAuth App's has none, and never needs
+    /// renewing.
     public static func refresh(clientID: String, token: GitHubToken, post: Post = Self.post) async throws -> GitHubToken {
         guard let refresh = token.refresh else { throw GitHubError(status: 401, message: "Signed out of GitHub: sign in again.") }
         let answer: TokenAnswer = try decoded(try await post(tokenAddress, [

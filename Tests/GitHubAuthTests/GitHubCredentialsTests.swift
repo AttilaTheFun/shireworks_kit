@@ -34,6 +34,7 @@ import Testing
     }
 
     nonisolated private static let renewed = #"{"access_token": "renewed", "refresh_token": "refresh-2", "expires_in": 28800}"#
+    nonisolated private static let code = #"{"device_code": "3584d835", "user_code": "WDJB-MJHT", "verification_uri": "https://github.com/login/device", "expires_in": 900, "interval": 0}"#
     nonisolated private static let badRefresh = #"{"error": "bad_refresh_token", "error_description": "The refresh token passed is incorrect or expired."}"#
 
     @Test func aTokenKeptIsSignedIn() {
@@ -53,6 +54,68 @@ import Testing
         #expect(access == "renewed")
         #expect(store.token(for: clientID)?.refresh == "refresh-2")
         #expect(renewals.asked.withLock { $0 } == 1)
+    }
+
+    /// An OAuth App's token (no end, no refresh token) is sent as it is,
+    /// never renewed; nor is one with an end but no refresh token.
+    @Test func anOAuthAppsTokenIsNeverRenewed() async throws {
+        let store = MemoryTokenStore([clientID: GitHubToken(access: "gho_fixture")])
+        let renewals = Renewals { _ in Self.renewed }
+        let credentials = GitHubCredentials(clientID: clientID, scope: "public_repo", store: store, post: renewals.post)
+        #expect(credentials.state == .signedIn)
+        #expect(try await credentials.access() == "gho_fixture")
+        #expect(try await credentials.access() == "gho_fixture")
+        store.keep(GitHubToken(access: "gho_ending", expires: soon), for: clientID)
+        credentials.reload()
+        #expect(try await credentials.access() == "gho_ending")
+        #expect(renewals.asked.withLock { $0 } == 0)
+        #expect(store.token(for: clientID) == GitHubToken(access: "gho_ending", expires: soon))
+    }
+
+    /// Signing in by code asks with the scope given, and keeps the OAuth
+    /// App's token GitHub answers with.
+    @Test func signedInByCodeWithTheScope() async {
+        let store = MemoryTokenStore()
+        let forms = Locked<[[String: String]]>([])
+        let post: GitHubDeviceFlow.Post = { address, form in
+            forms.withLock { $0.append(form) }
+            return Data((address == GitHubDeviceFlow.codeAddress ? Self.code : #"{"access_token": "gho_fixture", "token_type": "bearer", "scope": "repo"}"#).utf8)
+        }
+        let credentials = GitHubCredentials(clientID: clientID, scope: "repo", store: store, post: post)
+        credentials.signInByCode()
+        await credentials.waiting?.value
+        #expect(credentials.state == .signedIn)
+        #expect(store.token(for: clientID) == GitHubToken(access: "gho_fixture"))
+        #expect(forms.withLock { $0 }.first == ["client_id": clientID, "scope": "repo"])
+        #expect(forms.withLock { $0 }.last?["scope"] == nil, "the polls send no scope")
+    }
+
+    /// A sign-in by code cancelled just as GitHub answers with the token
+    /// keeps nothing.
+    @Test func aSignInCancelledAsGitHubAnswersKeepsNothing() async {
+        let store = MemoryTokenStore()
+        let signingIn = Locked<GitHubCredentials?>(nil)
+        let post: GitHubDeviceFlow.Post = { address, _ in
+            if address == GitHubDeviceFlow.codeAddress { return Data(Self.code.utf8) }
+            // Cancelled here, with GitHub's answer on its way.
+            await MainActor.run { signingIn.withLock { $0 }?.cancelSignIn() }
+            return Data(#"{"access_token": "gho_fixture", "token_type": "bearer", "scope": "public_repo"}"#.utf8)
+        }
+        let credentials = GitHubCredentials(clientID: clientID, scope: "public_repo", store: store, post: post)
+        signingIn.withLock { $0 = credentials }
+        let heard = Heard()
+        credentials.signedIn = { heard.said.append("in") }
+        credentials.signInByCode()
+        await credentials.waiting?.value
+        #expect(credentials.state == .signedOut)
+        #expect(store.token(for: clientID) == nil)
+        #expect(heard.said.isEmpty)
+        do {
+            _ = try await credentials.access()
+            Issue.record("no token once cancelled")
+        } catch {
+            #expect((error as? GitHubError)?.signedOut == true)
+        }
     }
 
     /// Another app sharing the store renewed it already: its token is

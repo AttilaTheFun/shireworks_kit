@@ -2,16 +2,20 @@ import Foundation
 import Observation
 
 /// An app's sign-in to GitHub, as the user: a token from GitHub's device
-/// flow through a GitHub App (its `clientID`: a code entered at
-/// github.com/login/device), renewed with its refresh token before it runs
-/// out; or, where the app has no client id or can't sign in by code (a
-/// web page: github.com's device flow answers no other site's page), a
-/// token pasted, a fine-grained personal access token. Kept in `store`, by
-/// the client id that issued it.
+/// flow (a code entered at github.com/login/device) through an OAuth App
+/// or a GitHub App (its `clientID`); or, where the app has no client id or
+/// can't sign in by code (a web page: github.com's device flow answers no
+/// other site's page), a token pasted, a fine-grained personal access
+/// token. Kept in `store`, by the client id that issued it.
 ///
-/// The client id and the store are the host's: its own GitHub App, and a
-/// store in its own keychain group (`KeychainTokenStore`), never one another
-/// app's GitHub sign-in uses.
+/// An OAuth App's token (`gho_`, of the `scope` asked for) never runs out
+/// and has no refresh token: it is kept until signed out or refused. A
+/// GitHub App's (`ghu_`) is renewed with its refresh token before it runs
+/// out. Either works with no change here but the client id and the scope.
+///
+/// The client id, the scope and the store are the host's: its own OAuth
+/// App or GitHub App, and a store in its own keychain group
+/// (`KeychainTokenStore`), never one another app's GitHub sign-in uses.
 ///
 /// A GitHub App's refresh token changes with every renewal, so two
 /// renewals at once (from two processes on one store, an app and its
@@ -28,8 +32,12 @@ import Observation
 @MainActor
 @Observable
 public final class GitHubCredentials {
-    /// The GitHub App's client id; "" for none (a token pasted).
+    /// The OAuth App's or GitHub App's client id; "" for none (a token
+    /// pasted).
     public let clientID: String
+    /// What an OAuth App's token is asked to reach (`public_repo`, `repo`);
+    /// nil for a GitHub App's, which has no scope.
+    public let scope: String?
     /// Whether this app signs in by code (it has a client id, and isn't a
     /// web page), else by a token pasted.
     public let signsInByCode: Bool
@@ -48,20 +56,25 @@ public final class GitHubCredentials {
     @ObservationIgnored private let send: GitHubTransport.Send
     @ObservationIgnored private var token: GitHubToken?
     @ObservationIgnored private var kept: String
-    @ObservationIgnored private var waiting: Task<Void, Never>?
+    /// The sign-in by code under way (read by tests, to wait for it).
+    @ObservationIgnored private(set) var waiting: Task<Void, Never>?
     @ObservationIgnored private var renewing: Task<GitHubToken, Error>?
     /// How long a refused renewal waits before reading the store once more.
     @ObservationIgnored private let retryWait: UInt64
 
-    /// `clientID`: the host's GitHub App's ("" for none: a token pasted).
+    /// `clientID`: the host's OAuth App's or GitHub App's ("" for none: a
+    /// token pasted). `scope`: what an OAuth App's token is asked to reach
+    /// (nil: none sent, as for a GitHub App's).
     /// `store`: where the host keeps its tokens. `canSignInByCode`: false on
     /// a web page. `post` and `send`: a test's GitHub, in place of the
     /// device flow's and the API's (`send` asks whose a pasted token is).
     /// `retryWait`: how long a refused renewal waits to read the store once
     /// more.
-    public init(clientID: String, store: TokenStore, canSignInByCode: Bool = true, post: @escaping GitHubDeviceFlow.Post = GitHubDeviceFlow.post,
+    public init(clientID: String, scope: String? = nil, store: TokenStore, canSignInByCode: Bool = true,
+                post: @escaping GitHubDeviceFlow.Post = GitHubDeviceFlow.post,
                 send: @escaping GitHubTransport.Send = GitHubTransport.network, retryWait: Duration = .seconds(1)) {
         self.clientID = clientID
+        self.scope = scope
         let parts = retryWait.components
         self.retryWait = UInt64(max(parts.seconds, 0)) * 1_000_000_000 + UInt64(max(parts.attoseconds, 0) / 1_000_000_000)
         self.store = store
@@ -109,12 +122,15 @@ public final class GitHubCredentials {
         waiting?.cancel()
         problem = nil
         state = .asking
-        let clientID = clientID, post = post
+        let clientID = clientID, scope = scope, post = post
         waiting = Task {
             do {
-                let code = try await GitHubDeviceFlow.start(clientID: clientID, post: post)
+                let code = try await GitHubDeviceFlow.start(clientID: clientID, scope: scope, post: post)
                 state = .entering(code)
-                keep(try await GitHubDeviceFlow.token(clientID: clientID, for: code, post: post), as: clientID)
+                let token = try await GitHubDeviceFlow.token(clientID: clientID, for: code, post: post)
+                // Cancelled just as GitHub answered: nothing kept.
+                guard !Task.isCancelled else { return }
+                keep(token, as: clientID)
                 state = .signedIn
                 signedIn?()
             } catch {
@@ -152,7 +168,11 @@ public final class GitHubCredentials {
     }
 
     /// Signed out: the token deleted from the store (the access token and
-    /// its refresh token, kept together), for every sign-in on it.
+    /// its refresh token, kept together), for every sign-in on it. Nothing
+    /// is asked of GitHub: revoking a token there needs the app's client
+    /// secret, which never ships in an app, so the token stays good on
+    /// GitHub until the user revokes it (GitHub › Settings ›
+    /// Applications) or, a GitHub App's, it runs out.
     public func signOut() {
         waiting?.cancel()
         let was = state
@@ -212,7 +232,8 @@ public final class GitHubCredentials {
 
     /// The token to send, renewed first when it is about to run out (one
     /// renewal at a time); one GitHub won't renew, and nothing else on the
-    /// store has renewed meanwhile, is let go.
+    /// store has renewed meanwhile, is let go. One with no end or no
+    /// refresh token (an OAuth App's, or one pasted) is sent as it is.
     public func access() async throws -> String {
         guard var token else { throw GitHubError(status: 401, message: "Not signed in to GitHub: sign in first.") }
         guard token.expiresSoon(), token.refresh != nil, kept == clientID, !clientID.isEmpty else { return token.access }

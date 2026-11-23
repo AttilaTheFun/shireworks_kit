@@ -1,0 +1,1 @@
+- GitHubAuth signs in through an OAuth App too: a `scope` (`public_repo`, `repo`) from the host, sent with the device code request only when given; tokens with no end and no refresh token (`gho_`) kept and never renewed, while a GitHub App's `ghu_` tokens renew as before; sign-out deletes the stored token only; a sign-in by code cancelled as GitHub answers keeps nothing.

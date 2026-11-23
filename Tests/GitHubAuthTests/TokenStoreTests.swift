@@ -33,6 +33,19 @@ import Testing
         #expect(try JSONDecoder().decode(GitHubToken.self, from: JSONEncoder().encode(token)) == token)
     }
 
+    /// A token as the first stores kept it (JSONEncoder's, dates as seconds
+    /// since 2001) still reads back; so does one with nothing but its access
+    /// token, as an OAuth App's or a pasted one is kept.
+    @Test func aTokenKeptBeforeStillDecodes() throws {
+        let kept = #"{"access": "ghu_fixture", "refresh": "ghr_fixture", "expires": 815000000, "refreshExpires": 830000000}"#
+        #expect(try JSONDecoder().decode(GitHubToken.self, from: Data(kept.utf8))
+            == GitHubToken(access: "ghu_fixture", refresh: "ghr_fixture", expires: Date(timeIntervalSinceReferenceDate: 815_000_000),
+                           refreshExpires: Date(timeIntervalSinceReferenceDate: 830_000_000)))
+        #expect(try JSONDecoder().decode(GitHubToken.self, from: Data(#"{"access": "gho_fixture"}"#.utf8)) == GitHubToken(access: "gho_fixture"))
+        let oauth = GitHubToken(access: "gho_fixture")
+        #expect(try JSONDecoder().decode(GitHubToken.self, from: JSONEncoder().encode(oauth)) == oauth)
+    }
+
     @Test func expiresSoonWithinFiveMinutes() {
         let now = Date(timeIntervalSince1970: 1_793_094_060)
         #expect(GitHubToken(access: "a", expires: now.addingTimeInterval(299)).expiresSoon(now: now))

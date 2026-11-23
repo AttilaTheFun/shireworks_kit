@@ -11,5 +11,6 @@
 // - GitHubRequest, GitHubAnswer and GitHubTransport: one request to GitHub's
 //   API and its answer, sent over the network unless a test answers.
 //
-// The host gives the GitHub App's client id and, for the keychain, its own
-// service name and access group: nothing here names an app.
+// The host gives its OAuth App's or GitHub App's client id (an OAuth App's
+// with the scope to ask for) and, for the keychain, its own service name and
+// access group: nothing here names an app.

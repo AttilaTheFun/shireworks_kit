@@ -45,6 +45,32 @@ import Testing
         #expect(answers.asked == ["https://github.com/login/device/code Iv1.example"])
     }
 
+    /// An OAuth App's code is asked for with the host's scope; a GitHub
+    /// App's, with none sent.
+    @Test func theScopeIsSentOnlyWhenGiven() async throws {
+        let forms = Locked<[[String: String]]>([])
+        let post: GitHubDeviceFlow.Post = { address, form in
+            #expect(address == "https://github.com/login/device/code")
+            forms.withLock { $0.append(form) }
+            return Data(#"{"device_code": "3584d835", "user_code": "WDJB-MJHT", "verification_uri": "https://github.com/login/device", "expires_in": 900, "interval": 5}"#.utf8)
+        }
+        _ = try await GitHubDeviceFlow.start(clientID: "Iv1.example", scope: "public_repo", now: now, post: post)
+        _ = try await GitHubDeviceFlow.start(clientID: "Iv1.example", scope: "repo", now: now, post: post)
+        _ = try await GitHubDeviceFlow.start(clientID: "Iv1.example", now: now, post: post)
+        #expect(forms.withLock { $0 } == [["client_id": "Iv1.example", "scope": "public_repo"], ["client_id": "Iv1.example", "scope": "repo"],
+                                          ["client_id": "Iv1.example"]])
+    }
+
+    /// An OAuth App's token, as GitHub gives it: no end, no refresh token.
+    @Test func anOAuthAppsTokenHasNoEnd() async throws {
+        let answers = Answers([#"{"access_token": "gho_fixture", "token_type": "bearer", "scope": "public_repo"}"#])
+        let now = now
+        let token = try await GitHubDeviceFlow.token(clientID: "Iv1.example", for: code(), clock: { now }, post: answers.post, wait: answers.wait)
+        #expect(token == GitHubToken(access: "gho_fixture"))
+        #expect(token.refresh == nil && token.expires == nil && token.refreshExpires == nil)
+        #expect(!token.expiresSoon(now: now.addingTimeInterval(365 * 86400)))
+    }
+
     @Test func anAppWithoutTheDeviceFlowSaysSo() async {
         let answers = Answers([#"{"error": "device_flow_disabled", "error_description": "Device Flow must be explicitly enabled for this App"}"#])
         do {

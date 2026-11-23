@@ -3,9 +3,9 @@ import Foundation
 import Security
 #endif
 
-/// Where a sign-in's token is kept, by the GitHub App's client id that
-/// issued it (a token renews only with its own client id): "" for a token
-/// pasted. Apple's platforms keep it in the keychain (`KeychainTokenStore`,
+/// Where a sign-in's token is kept, by the client id that issued it (an
+/// OAuth App's or a GitHub App's; a token renews only with its own client
+/// id): "" for a token pasted. Apple's platforms keep it in the keychain (`KeychainTokenStore`,
 /// in the host app's own access group); another platform gives its own
 /// (the Android Keystore's, a file of the user's, the web page's storage),
 /// or keeps it in memory (`MemoryTokenStore`).
