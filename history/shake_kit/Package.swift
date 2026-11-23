@@ -23,6 +23,7 @@ let package = Package(
         .target(name: "IssueComposer"),
         .target(name: "ShakeKit", dependencies: ["GitHubAuth", "GitHubIssues", "IssueComposer"]),
         .testTarget(name: "GitHubAuthTests", dependencies: ["GitHubAuth"]),
+        .testTarget(name: "GitHubIssuesTests", dependencies: ["GitHubIssues"]),
         .testTarget(name: "IssueComposerTests", dependencies: ["IssueComposer"]),
     ],
     swiftLanguageModes: [.v6]
