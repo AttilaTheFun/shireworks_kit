@@ -51,8 +51,9 @@ their view models are tested on Linux too.
   - **An accessory slot** (`@ViewBuilder`) beside title and body: an
     issues browser's kind, status and priority pickers; ShakeKit's device
     info.
-  - **Drafts** are kept through a small protocol, which defaults to
-    `UserDefaults`.
+  - **Drafts** are kept through a small protocol, `DraftStore`, which
+    defaults to a JSON file in the app's container (`FileDraftStore`):
+    screenshots are too big for `UserDefaults`.
   - **Attachments upload at submit, not when picked:**
     1. Each attachment is uploaded.
     2. The body's placeholders are rewritten to the returned URLs.
@@ -188,9 +189,9 @@ scope the app asks for.
   github.com/login/device", and polls until the person has entered the
   code.
 - **Tokens:**
-  - An OAuth App's token doesn't expire and has no refresh token.
-    `GitHubAuth` also keeps handling expiring tokens and their refresh, for
-    the switch to a GitHub App.
+  - The owner's OAuth App has token expiration on: a token lasts 8 hours
+    and comes with a refresh token, which `GitHubAuth` uses to renew it.
+    Expiry stays optional, for an OAuth App without expiration.
   - The token goes in the app's keychain, in the host app's own access
     group. It must never be a group shared with another app's GitHub
     sign-in, or one sign-in would replace the other.
@@ -211,12 +212,23 @@ scope the app asks for.
   The owner's issues browser can move onto `GitHubAuth` and
   `GitHubIssues` once they're released.
 
-**What the owner creates:** an **OAuth App** (Settings › Developer
-settings › OAuth Apps), with this repository as its homepage and callback
-URL (device flow never uses the callback), and **Enable Device Flow** on.
-No client secret is generated or needed. Its client id (not a secret) goes
-in each app's Info.plist as `ShakeKitClientID`, and the scope as
-`ShakeKitScope`, both stamped by the app's CI.
+**The apps** (both named `logan-shire-shake`; tell them apart by client
+id, which is public, not a secret):
+
+| App | Client id | Used for |
+| --- | --- | --- |
+| OAuth App | `Ov23liV9P5ku0ntejoEc` | Sign-in today: device flow, attachments inline |
+| GitHub App | `Iv23liWyhH9QbD6m7yx3` | Later, when GitHub lets App tokens upload attachments (TODO.md) |
+
+The OAuth App has this repository as its homepage and callback URL (device
+flow never uses the callback), **Enable Device Flow** on, and no client
+secret. Its client id is ShakeKit's default `ShakeKitClientID`. An app can
+override it, and sets its scope as `ShakeKitScope`, in its Info.plist, both
+stamped by its CI.
+
+Tested 2026-11-23: the OAuth App's `gho_` token, with scope `public_repo`,
+uploaded to user-attachments against this repository (201) and got a
+`github.com/user-attachments/assets/…` URL.
 
 ## 6. Privacy
 
@@ -263,16 +275,19 @@ in each app's Info.plist as `ShakeKitClientID`, and the scope as
 
 ## 8. Rollout
 
-1. **The Shake App:** the owner creates it.
-2. **The first spike:** check that its `ghu_` token can upload. If not,
-   switch it to an OAuth App (section 4).
+1. **The apps:** the owner created both (section 5). Done.
+2. **The spike:** the GitHub App's `ghu_` token can't upload; the OAuth
+   App's `gho_` token can (section 4). Done.
 3. **0.1.0:** with `GitHubAuth`, `GitHubIssues`, `IssueComposer` and
    `ShakeKit`, on iOS and macOS.
 4. **Each app:** its owner integrates it in a pull request of their own,
    with:
    - the modifier, and the commands on a Mac;
-   - the client id in Info.plist;
-   - the Shake App installed on its repository.
+   - its scope in Info.plist (`ShakeKitScope`: `public_repo`, or `repo` for
+     a private repository).
+
+   An OAuth App isn't installed on repositories: the person's own access
+   decides where they can file.
 
    The list of apps is kept with the owner, since some are private. The
    public ones: Visor, Playground and Isomer's Storybook.

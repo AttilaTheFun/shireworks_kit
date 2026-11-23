@@ -3,7 +3,9 @@
 - **Switch sign-in to a GitHub App once GitHub lets App user tokens upload
   attachments.** Today ShakeKit signs in with an OAuth App, because the
   attachment endpoint (`uploads.github.com/user-attachments/assets`)
-  refuses GitHub App tokens. The owner's Shake GitHub App already exists, and
+  refuses GitHub App tokens. The GitHub App, `logan-shire-shake` (client id
+`Iv23liWyhH9QbD6m7yx3`, as opposed to the OAuth App's `Ov23liV9P5ku0ntejoEc`),
+already exists, and
   a GitHub App's user token would be narrower: Issues only, on the
   repositories it's installed on, expiring. `GitHubAuth` handles both kinds
   of token, so the switch is a configuration change per app. The evidence:

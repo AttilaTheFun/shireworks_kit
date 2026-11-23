@@ -5,7 +5,9 @@ IssueComposer): docs/Design.md is the design.
 
 - **This repository is public.** Never add a person's name (write "the
   owner"), a device or host name, a private project's name, or any secret,
-  key, token, client id, team ID or UDID.
+  key, token, team ID or UDID. The exceptions, by the owner's choice: the
+  two `logan-shire-shake` apps' names and client ids (public identifiers,
+  not secrets; docs/Design.md, section 5). Never a client secret.
 - **Nothing goes to main but through a pull request.** Each PR is branched
   from main (squash merges conflict with stacked PRs) and adds a
   `changes/<branch>.md` fragment; never edit CHANGELOG.md. Agents merge
