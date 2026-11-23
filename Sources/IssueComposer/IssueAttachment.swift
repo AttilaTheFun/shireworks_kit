@@ -3,7 +3,7 @@ import Foundation
 /// A file the person attached to an issue they're writing: a screenshot, an
 /// image they picked, or the app's logs. It stays on the device until the
 /// issue is submitted, when the host's upload turns it into a URL.
-public struct IssueAttachment: Sendable, Equatable, Identifiable {
+public struct IssueAttachment: Sendable, Equatable, Identifiable, Codable {
     public let id: UUID
     /// The file's name, as GitHub shows it ("screenshot-1.png").
     public var name: String

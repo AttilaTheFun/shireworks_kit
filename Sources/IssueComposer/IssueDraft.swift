@@ -2,7 +2,7 @@ import Foundation
 
 /// An issue being written: what the composer edits, keeps as a draft, and
 /// hands to the host at submit.
-public struct IssueDraft: Sendable, Equatable {
+public struct IssueDraft: Sendable, Equatable, Codable {
     public var title: String
     /// Markdown. Attachments appear in it by their placeholders until they
     /// are uploaded.
