@@ -49,7 +49,12 @@ public final class IssueComposerModel {
 
     /// Keeps the draft, e.g. when the sheet closes unsent.
     public func saveDraft() {
-        store.save(draft)
+        // Nothing to keep (after a submit, say): no empty draft on disk.
+        if draft == IssueDraft() {
+            store.clear()
+        } else {
+            store.save(draft)
+        }
     }
 
     /// Throws the draft away.

@@ -25,6 +25,7 @@ let package = Package(
         .testTarget(name: "GitHubAuthTests", dependencies: ["GitHubAuth"]),
         .testTarget(name: "GitHubIssuesTests", dependencies: ["GitHubIssues"]),
         .testTarget(name: "IssueComposerTests", dependencies: ["IssueComposer"]),
+        .testTarget(name: "ShakeKitTests", dependencies: ["ShakeKit", "GitHubAuth", "GitHubIssues", "IssueComposer"]),
     ],
     swiftLanguageModes: [.v6]
 )
