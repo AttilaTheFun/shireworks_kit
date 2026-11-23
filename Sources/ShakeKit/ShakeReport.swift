@@ -11,8 +11,24 @@ import Observation
 @MainActor
 @Observable
 public final class ShakeReport {
-    /// Posted to ask for a report: by a shake, the menu command, or the app.
+    /// Posted to ask for a report: by a shake, the menu command, or the app
+    /// (`request()`). Its object is a `Trigger`.
     public static let requested = Notification.Name("ShakeKit.reportRequested")
+
+    /// What asked for a report. A shake opens it only for someone signed in,
+    /// so a shake in a build for anyone never springs a sign-in on them; a
+    /// deliberate request (the menu command, a Report a Bug button) opens it
+    /// either way, offering the sign-in.
+    public enum Trigger: Sendable {
+        case shake
+        case request
+    }
+
+    /// Asks for a report deliberately, from the app's own Report a Bug
+    /// button: it opens, with the sign-in if needed.
+    public static func request() {
+        NotificationCenter.default.post(name: requested, object: Trigger.request)
+    }
 
     /// "owner/name", where the issue is filed.
     public let repository: String
@@ -80,9 +96,11 @@ public final class ShakeReport {
     }
 
     /// Opens the composer, with a screenshot of the app as it is now added
-    /// to the draft. Asked again while it's showing, it does nothing.
-    public func present() {
+    /// to the draft. Asked again while it's showing, it does nothing; asked
+    /// by a shake while nobody is signed in, neither.
+    public func present(_ trigger: Trigger = .request) {
         guard !isPresented else { return }
+        if trigger == .shake, credentials.state != .signedIn { return }
         if let png = screenshot() {
             let count = composer.draft.attachments.filter { $0.name.hasPrefix("screenshot-") }.count
             composer.attach(IssueAttachment(name: "screenshot-\(count + 1).png", contentType: "image/png", data: png))

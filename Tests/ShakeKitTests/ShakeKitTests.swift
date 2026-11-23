@@ -149,6 +149,27 @@ struct ShakeReportTests {
         #expect(report.composer.draft.attachments.count == 1)
     }
 
+    @Test func aShakeOpensItOnlyForSomeoneSignedIn() {
+        let github = FakeGitHub()
+        let signedOut = GitHubCredentials(clientID: "Ov23example", scope: "public_repo", store: MemoryTokenStore())
+        let report = ShakeReport(
+            repository: "owner/app", configuration: ShakeKitConfiguration(clientID: "Ov23example"), shared: nil,
+            credentials: signedOut, logSource: FixedLogs(lines: []), draftStore: MemoryDraftStore(),
+            send: github.send, screenshot: { Data([1]) })
+        report.present(.shake)
+        #expect(!report.isPresented)
+        #expect(report.composer.draft.attachments.isEmpty)
+        // Asked for deliberately, it opens, with the sign-in.
+        report.present(.request)
+        #expect(report.isPresented)
+    }
+
+    @Test func aShakeOpensItWhenSignedIn() {
+        let report = report(github: FakeGitHub())
+        report.present(.shake)
+        #expect(report.isPresented)
+    }
+
     @Test func eachShakeAddsTheNextScreenshot() {
         let report = report(github: FakeGitHub())
         report.present()

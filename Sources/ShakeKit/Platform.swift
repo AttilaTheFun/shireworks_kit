@@ -102,7 +102,7 @@ extension UIWindow {
     /// A shake anywhere in the app asks for a report.
     override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake {
-            NotificationCenter.default.post(name: ShakeReport.requested, object: nil)
+            NotificationCenter.default.post(name: ShakeReport.requested, object: ShakeReport.Trigger.shake)
         }
         super.motionEnded(motion, with: event)
     }

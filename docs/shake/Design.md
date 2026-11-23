@@ -73,14 +73,19 @@ their view models are tested on Linux too.
     .commands { ShakeKitCommands() }   // macOS: Help › Report a Bug… (⌥⌘B)
 
 - **iOS and iPadOS.** A shake (`motionEnded(.motionShake)`, reaching the
-  key window through the responder chain) opens the composer. Shakes
-  that come in while it's up are ignored.
+  key window through the responder chain) opens the composer, **only for
+  someone signed in** (through the apps' shared sign-in, or ShakeKit's
+  own). Nobody else's shake does anything, so ShakeKit can be in every
+  build without springing a sign-in on people. Shakes that come in while
+  it's up are ignored.
 - **macOS.** No shake: `ShakeKitCommands()` adds the menu command and its
   shortcut.
 - **Other hosts:** later. The API is kept portable, so they can follow
   through Isomer.
-- `ShakeReport.present(repository:)` opens it from code, for a "Report a
-  Bug" button.
+- `ShakeReport.request()` opens it deliberately, for the app's own "Report
+  a Bug" button; so does the Mac's menu command. A deliberate request opens
+  it signed in or not, offering ShakeKit's own sign-in: that's how someone
+  chooses to start it.
 - `ShakeKitConfiguration` (optional): which log subsystems to include,
   the time window, size caps, extra redaction rules, and the issue's
   labels.
@@ -260,10 +265,11 @@ uploaded to user-attachments against this repository (201) and got a
 - **No network until the composer opens:** no analytics and no crash
   hooks. Screenshots and logs stay in memory (or the app's container, for
   a kept draft), and are dropped once the issue is created.
-- **Release builds:** ShakeKit is on only when the build opts in, with
-  `ShakeKitClientID` or `ShakeKitScope` in its Info.plist, stamped by CI into
-  test and alpha builds (an empty value takes the default client id). A
-  release build for other people, with neither, offers no report.
+- **Every build:** in the owner's apps, CI stamps `ShakeKitScope` (or
+  `ShakeKitClientID`) into every build, production included (the owner,
+  2026-11-23). A build without either offers no report at all. In a build
+  with it, a shake shows nothing to anyone who isn't signed in; reporting
+  starts only when someone is signed in or asks for it themselves.
 
 ## 7. Packaging and conventions (as update_kit)
 

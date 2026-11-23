@@ -59,7 +59,8 @@ public struct ShakeKitConfiguration: Sendable, Equatable {
 
     /// The configuration an Info.plist gives. ShakeKit is on only when the
     /// build opts in, with `ShakeKitClientID` or `ShakeKitScope` stamped in by
-    /// its CI (test and alpha builds, say); an empty value takes the default.
+    /// its CI (in every build of the owner's apps); an empty value takes the
+    /// default.
     /// A value a build didn't fill in (`$(…)`) counts as absent.
     public static func from(info: [String: Any]?) -> ShakeKitConfiguration {
         func present(_ key: String) -> Bool {

@@ -1,0 +1,1 @@
+- ShakeKit is meant for every build: a shake opens a report only for someone signed in; `ShakeReport.request()` (and the Mac's menu command) opens it deliberately, offering the sign-in. Docs: CI stamps the opt-in key into every build.

@@ -27,8 +27,8 @@ struct ShakeToReport: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onReceive(NotificationCenter.default.publisher(for: ShakeReport.requested)) { _ in
-                report.present()
+            .onReceive(NotificationCenter.default.publisher(for: ShakeReport.requested)) { notification in
+                report.present(notification.object as? ShakeReport.Trigger ?? .request)
             }
             .sheet(isPresented: $report.isPresented) {
                 ShakeReportSheet(report: report)
@@ -49,9 +49,7 @@ public struct ShakeKitCommands: Commands {
     public var body: some Commands {
         CommandGroup(after: .help) {
             if configuration.isEnabled {
-                Button("Report a Bug…") {
-                    NotificationCenter.default.post(name: ShakeReport.requested, object: nil)
-                }
+                Button("Report a Bug…") { ShakeReport.request() }
                 .keyboardShortcut("b", modifiers: [.command, .option])
             }
         }

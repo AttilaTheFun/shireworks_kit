@@ -30,8 +30,14 @@ In the app:
 
 It does nothing unless the build opts in, with `ShakeKitScope` (`public_repo`,
 or `repo` for a private repository) or `ShakeKitClientID` (the OAuth App to
-sign in with) in its Info.plist; an empty value takes the default. Stamp them
-in from CI for test and alpha builds only, so release builds never offer it.
+sign in with) in its Info.plist; an empty value takes the default. The
+owner's apps stamp one in from CI in **every build**, production included.
+
+A shake opens a report only for someone already signed in (the apps' shared
+sign-in, or ShakeKit's own), so it never surprises anyone else. To let people
+start it themselves, give them a Report a Bug button that calls
+`ShakeReport.request()`; on a Mac, `ShakeKitCommands` adds one to the Help
+menu. A deliberate request offers the sign-in when needed.
 
 On iOS, ShakeKit hears the shake through an override of `UIWindow`'s
 `motionEnded`, which applies to every window of the app; it calls `super`, so
