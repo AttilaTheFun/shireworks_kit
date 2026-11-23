@@ -38,15 +38,22 @@ struct ShakeToReport: ViewModifier {
 
 /// Help › Report a Bug… (⌥⌘B), for a Mac (and an iPad's keyboard), where
 /// there's no shake.
+/// Left out when ShakeKit is off (a release build that doesn't opt in).
 public struct ShakeKitCommands: Commands {
-    public init() {}
+    let configuration: ShakeKitConfiguration
+
+    public init(configuration: ShakeKitConfiguration = .main) {
+        self.configuration = configuration
+    }
 
     public var body: some Commands {
         CommandGroup(after: .help) {
-            Button("Report a Bug…") {
-                NotificationCenter.default.post(name: ShakeReport.requested, object: nil)
+            if configuration.isEnabled {
+                Button("Report a Bug…") {
+                    NotificationCenter.default.post(name: ShakeReport.requested, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .option])
             }
-            .keyboardShortcut("b", modifiers: [.command, .option])
         }
     }
 }
