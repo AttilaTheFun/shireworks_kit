@@ -1,0 +1,1 @@
+- docs/Design.md: the design, with sign-in through an OAuth App (attachments inline); TODO.md: switch to a GitHub App when GitHub allows it.
