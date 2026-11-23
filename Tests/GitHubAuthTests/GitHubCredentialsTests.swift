@@ -85,7 +85,7 @@ import Testing
         credentials.signInByCode()
         await credentials.waiting?.value
         #expect(credentials.state == .signedIn)
-        #expect(store.token(for: clientID) == GitHubToken(access: "gho_fixture"))
+        #expect(store.token(for: clientID) == GitHubToken(access: "gho_fixture", scope: "repo"))
         #expect(forms.withLock { $0 }.first == ["client_id": clientID, "scope": "repo"])
         #expect(forms.withLock { $0 }.last?["scope"] == nil, "the polls send no scope")
     }

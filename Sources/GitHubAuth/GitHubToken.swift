@@ -13,12 +13,26 @@ public struct GitHubToken: Codable, Sendable, Equatable {
     public var expires: Date?
     /// When the refresh token runs out.
     public var refreshExpires: Date?
+    /// What GitHub granted an OAuth App's token (its answer's `scope`, comma-separated: `repo,workflow`); nil for a
+    /// GitHub App's, which has none, or a token pasted.
+    public var scope: String?
 
-    public init(access: String, refresh: String? = nil, expires: Date? = nil, refreshExpires: Date? = nil) {
+    public init(access: String, refresh: String? = nil, expires: Date? = nil, refreshExpires: Date? = nil, scope: String? = nil) {
         self.access = access
         self.refresh = refresh
         self.expires = expires
         self.refreshExpires = refreshExpires
+        self.scope = scope
+    }
+
+    /// Whether it was granted every scope of `wanted` (space- or comma-separated): `repo` covers `public_repo`; a
+    /// token with no scope said (a GitHub App's, whose reach is its permissions) is taken to.
+    public func covers(_ wanted: String) -> Bool {
+        guard let scope else { return true }
+        let granted = Set(scope.split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init))
+        return wanted.split(whereSeparator: { $0 == "," || $0 == " " }).allSatisfy { part in
+            granted.contains(String(part)) || (part == "public_repo" && granted.contains("repo"))
+        }
     }
 
     /// Whether to renew it before using it: within five minutes of its

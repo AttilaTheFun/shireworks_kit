@@ -66,7 +66,7 @@ import Testing
         let answers = Answers([#"{"access_token": "gho_fixture", "token_type": "bearer", "scope": "public_repo"}"#])
         let now = now
         let token = try await GitHubDeviceFlow.token(clientID: "Iv1.example", for: code(), clock: { now }, post: answers.post, wait: answers.wait)
-        #expect(token == GitHubToken(access: "gho_fixture"))
+        #expect(token == GitHubToken(access: "gho_fixture", scope: "public_repo"))
         #expect(token.refresh == nil && token.expires == nil && token.refreshExpires == nil)
         #expect(!token.expiresSoon(now: now.addingTimeInterval(365 * 86400)))
     }

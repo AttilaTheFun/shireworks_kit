@@ -40,6 +40,7 @@ public enum GitHubDeviceFlow {
         let refreshToken: String?
         let expiresIn: Int?
         let refreshTokenExpiresIn: Int?
+        let scope: String?
         let interval: Int?
         let error: String?
         let errorDescription: String?
@@ -124,7 +125,8 @@ public enum GitHubDeviceFlow {
         guard let access = answer.accessToken else { return nil }
         return GitHubToken(access: access, refresh: answer.refreshToken,
                            expires: answer.expiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
-                           refreshExpires: answer.refreshTokenExpiresIn.map { now.addingTimeInterval(TimeInterval($0)) })
+                           refreshExpires: answer.refreshTokenExpiresIn.map { now.addingTimeInterval(TimeInterval($0)) },
+                           scope: answer.scope)
     }
 
     private static func decoded<T: Decodable>(_ data: Data, as type: T.Type = T.self) throws -> T {
