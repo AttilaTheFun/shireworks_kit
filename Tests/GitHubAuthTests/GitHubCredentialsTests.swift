@@ -145,6 +145,41 @@ import Testing
         #expect(credentials.state == .signedIn)
     }
 
+    /// Two apps sharing the store and a renewal lock, both finding the
+    /// token about to run out at once: one renews, under the lock, and the
+    /// other, waiting for it, takes its token; GitHub is asked once, and no
+    /// refresh token is spent twice.
+    @Test func appsSharingALockRenewOnce() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("renewal-\(UUID().uuidString).lock").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let store = MemoryTokenStore([clientID: GitHubToken(access: "old", refresh: "refresh-1", expires: soon)])
+        let asked = Locked(0)
+        let slow: GitHubDeviceFlow.Post = { _, _ in
+            asked.withLock { $0 += 1 }
+            try await Task.sleep(for: .milliseconds(300))
+            return Data(Self.renewed.utf8)
+        }
+        let one = GitHubCredentials(clientID: clientID, store: store, post: slow, renewalLock: FileRenewalLock(path: path))
+        let other = GitHubCredentials(clientID: clientID, store: store, post: slow, renewalLock: FileRenewalLock(path: path))
+        async let first = one.access()
+        async let second = other.access()
+        let answers = try await [first, second]
+        #expect(answers == ["renewed", "renewed"])
+        #expect(asked.withLock { $0 } == 1)
+        #expect(store.token(for: clientID)?.refresh == "refresh-2")
+    }
+
+    /// The lock is one holder's at a time, and let go by its lease.
+    @Test func aRenewalLockIsHeldByOneAtATime() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("renewal-\(UUID().uuidString).lock").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let lease = try await FileRenewalLock(path: path).acquire()
+        await #expect(throws: GitHubError.self) { _ = try await FileRenewalLock(path: path, timeLimit: .milliseconds(300)).acquire() }
+        lease.release()
+        let again = try await FileRenewalLock(path: path, timeLimit: .milliseconds(300)).acquire()
+        again.release()
+    }
+
     /// Refused, and no other app renewed it: signed out, and why.
     @Test func aRefusalSignsOut() async {
         let store = MemoryTokenStore([clientID: GitHubToken(access: "old", refresh: "refresh-1", expires: soon)])

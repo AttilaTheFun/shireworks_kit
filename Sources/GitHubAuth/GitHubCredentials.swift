@@ -23,6 +23,12 @@ import Observation
 /// is read again (another may have renewed it already), and when GitHub
 /// refuses the renewal, again (another won the race), before giving up.
 ///
+/// Where several apps share one sign-in (a store in a keychain group they all
+/// carry), a `renewalLock` they share too (`FileRenewalLock`, in an app
+/// group's container) makes each renewal one at a time across them: the
+/// store read again, the token renewed and the renewed one kept, all under
+/// the lock, so none spends a refresh token another has spent already.
+///
 /// In one process (several screens, each with a sign-in of its own on one
 /// store) the sign-ins on one store (its `sharingKey`) hear each other at
 /// once: whatever one of them keeps or finds changed (signed in, renewed,
@@ -61,6 +67,8 @@ public final class GitHubCredentials {
     @ObservationIgnored private var renewing: Task<GitHubToken, Error>?
     /// How long a refused renewal waits before reading the store once more.
     @ObservationIgnored private let retryWait: UInt64
+    /// Held across a renewal, by every process sharing the store; nil for one process alone.
+    @ObservationIgnored private let renewalLock: RenewalLock?
 
     /// `clientID`: the host's OAuth App's or GitHub App's ("" for none: a
     /// token pasted). `scope`: what an OAuth App's token is asked to reach
@@ -69,12 +77,15 @@ public final class GitHubCredentials {
     /// a web page. `post` and `send`: a test's GitHub, in place of the
     /// device flow's and the API's (`send` asks whose a pasted token is).
     /// `retryWait`: how long a refused renewal waits to read the store once
-    /// more.
+    /// more. `renewalLock`: the lock every app sharing the store holds
+    /// across a renewal (nil: this process alone renews on it).
     public init(clientID: String, scope: String? = nil, store: TokenStore, canSignInByCode: Bool = true,
                 post: @escaping GitHubDeviceFlow.Post = GitHubDeviceFlow.post,
-                send: @escaping GitHubTransport.Send = GitHubTransport.network, retryWait: Duration = .seconds(1)) {
+                send: @escaping GitHubTransport.Send = GitHubTransport.network, retryWait: Duration = .seconds(1),
+                renewalLock: RenewalLock? = nil) {
         self.clientID = clientID
         self.scope = scope
+        self.renewalLock = renewalLock
         let parts = retryWait.components
         self.retryWait = UInt64(max(parts.seconds, 0)) * 1_000_000_000 + UInt64(max(parts.attoseconds, 0) / 1_000_000_000)
         self.store = store
@@ -244,8 +255,18 @@ public final class GitHubCredentials {
             token = shared
             if !shared.expiresSoon() { return shared.access }
         }
-        let clientID = clientID, post = post, old = token
-        let renewal = Task { try await GitHubDeviceFlow.refresh(clientID: clientID, token: old, post: post) }
+        let clientID = clientID, post = post, old = token, store = store, lock = renewalLock
+        let renewal = Task { () throws -> GitHubToken in
+            guard let lock else { return try await GitHubDeviceFlow.refresh(clientID: clientID, token: old, post: post) }
+            // Under the shared lock: another app's renewal, kept while this one waited, is taken; else this one
+            // renews, and keeps the renewed token before letting go.
+            let lease = try await lock.acquire()
+            defer { lease.release() }
+            if let shared = store.token(for: clientID), shared != old, !shared.expiresSoon() { return shared }
+            let renewed = try await GitHubDeviceFlow.refresh(clientID: clientID, token: old, post: post)
+            store.keep(renewed, for: clientID)
+            return renewed
+        }
         renewing = renewal
         defer { renewing = nil }
         do {
