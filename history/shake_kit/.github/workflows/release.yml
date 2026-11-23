@@ -22,18 +22,18 @@ jobs:
     container: swift:6.4.2-noble@sha256:23d9b28ad97fb1cf1999edc3a0cb265ee915ed42299a9344e7173d5a6d2b05f4
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - run: swift build --build-tests
       - shell: bash
         run: set -o pipefail; swift test --skip-build 2>&1 | tee linux.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: linux-log, path: linux.log, retention-days: 1 }
   macos:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - run: swift build --build-tests
       - shell: bash
         run: set -o pipefail; swift test --skip-build 2>&1 | tee macos.log
@@ -47,7 +47,7 @@ jobs:
               -derivedDataPath "$RUNNER_TEMP/dd"
             echo "::endgroup::"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: macos-log, path: macos.log, retention-days: 1 }
   proof:
@@ -59,7 +59,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { pattern: "*-log", path: logs, merge-multiple: true }
       - shell: bash
         run: |
@@ -70,7 +70,7 @@ jobs:
           "$bin/tests-proof" --out proof --zip proof.zip --app shake_kit --version "$VERSION" \
             "linux=Linux (Swift 6.4.2)=logs/linux.log" "macos=macOS 26=logs/macos.log"
           "$bin/proof-diff" make proof.zip --out proof-diff.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-files
           retention-days: 1
@@ -89,7 +89,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { name: release-files }
       - shell: bash
         run: |
