@@ -121,4 +121,27 @@ struct CrashReportTests {
         other.frames[0].symbol = "swift_release"
         #expect(other.signature != system.signature)
     }
+
+    /// A release build's own frames have no symbol on the device, and their
+    /// offsets move with every build: then the signature stays the same from
+    /// build to build, by the reason (its numbers out) and the frames' images.
+    @Test func withoutSymbolsTheSameCrashSignsTheSameAcrossBuilds() {
+        func stripped(_ offset: UInt64, line: Int, address: String) -> CrashReport {
+            var report = Fixtures.report(type: "EXC_BREAKPOINT")
+            report.reason = "Example/List.swift:\(line): Fatal error: Index out of range (at \(address))"
+            for index in report.frames.indices where report.frames[index].inApp {
+                report.frames[index].symbol = nil
+                report.frames[index].instructionAddress = 0x1_0000_0000 + offset + UInt64(index)
+            }
+            return report
+        }
+        let build1 = stripped(0x258c, line: 12, address: "0x10"), build2 = stripped(0x2610, line: 14, address: "0x28")
+        #expect(build1.signature == build2.signature)
+        // Another fatal error, in the same image: another crash.
+        var other = build1
+        other.reason = "Example/List.swift:12: Fatal error: Unexpectedly found nil"
+        #expect(other.signature != build1.signature)
+        #expect(CrashSignature.steady("KERN_INVALID_ADDRESS at 0x0000000000000028") == "KERN_INVALID_ADDRESS at #")
+    }
 }
+

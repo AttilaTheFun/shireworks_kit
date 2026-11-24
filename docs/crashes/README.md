@@ -58,9 +58,14 @@ filer) is the same everywhere, and tested on Linux and on a Mac.
 
 A crash's **signature** is the exception's type and its top three frames of
 the app's own (the top three frames where none is the app's), each by its
-symbol, or by its image and its offset in it where the device had none:
-hashed with 64-bit FNV-1a, 16 hex digits. Not the reason, whose addresses
-change from run to run.
+symbol: hashed with 64-bit FNV-1a, 16 hex digits. Not the reason, whose
+addresses change from run to run. Where a top frame has no symbol (a release
+build's own code, mostly), an offset would move with every build, so the
+signature is the exception's type, its reason with its numbers and
+addresses taken out, and those frames by their image alone: the same crash
+keeps one issue from build to build, at the cost of sometimes taking two
+crashes in one image for one (each comment carries its own crashing
+thread).
 
 Its issue's body ends with two HTML comments, unseen on GitHub:
 
@@ -118,5 +123,4 @@ named by their image and offset (`MyApp + 0x1a2b`), and the binary images
 by their UUID and load address: what symbolicating them against the build's
 dSYMs takes (`atos -o MyApp.dSYM/... -l <load address> <address>`). That is
 left for later (CI keeping each build's dSYMs, and a step that symbolicates
-an issue's frames). Until then a crash in code without symbols has a
-signature per build, since its offsets move from build to build.
+an issue's frames).

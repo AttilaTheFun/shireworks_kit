@@ -87,8 +87,14 @@ public struct CrashReport: Codable, Sendable, Equatable, Identifiable {
 
         /// "MyApp + 0x1a2b", or the symbol where known: what names the frame
         /// in a title and a signature.
+        /// Its symbol, where the device had one (Sentry says `<redacted>` for one it hid).
+        public var symbolName: String? {
+            guard let symbol, !symbol.isEmpty, symbol != "<redacted>" else { return nil }
+            return symbol
+        }
+
         public var location: String {
-            if let symbol, !symbol.isEmpty, symbol != "<redacted>" { return symbol }
+            if let symbolName { return symbolName }
             let image = imageName ?? "?"
             guard let offset else { return image + " " + CrashReport.hex(instructionAddress) }
             return image + " + " + CrashReport.hex(offset)
@@ -139,21 +145,56 @@ public struct CrashReport: Codable, Sendable, Equatable, Identifiable {
 
 /// What makes two crashes the same: the exception's type and the top frames
 /// (`CrashReport.topFrames`, the app's own where any is), each by its
-/// symbol, or its image and offset where the device had no symbol. Not the
-/// reason, which carries addresses that change from run to run.
+/// symbol. Not the reason, which carries addresses that change from run to
+/// run.
+///
+/// Where a top frame has no symbol (a release build's own frames: the device
+/// has none, and an offset moves with every build), the signature is kept
+/// the same from build to build instead: the exception's type, its reason
+/// with its addresses and numbers taken out, and each such frame by its
+/// image alone. That can take two crashes in the same image for one (each
+/// occurrence's comment carries its own crashing thread), rather than making
+/// a new issue of the same crash at every build.
 ///
 /// Hashed with 64-bit FNV-1a, as 16 hex digits: the same on every platform
 /// and in every process (unlike Swift's `Hasher`), with nothing to import.
 /// Not a cryptographic hash, and needn't be: it tells an app's crashes
-/// apart, not anyone's. A frame known only by its offset changes with the
-/// build, so a crash without symbols has a signature per build.
+/// apart, not anyone's.
 public enum CrashSignature {
     /// How many frames go in.
     public static let frameCount = 3
 
     public static func of(_ report: CrashReport) -> String {
-        let parts = [report.exceptionType] + report.topFrames.map(\.location)
+        let frames = report.topFrames
+        let parts: [String]
+        if frames.allSatisfy({ $0.symbolName != nil }) {
+            parts = [report.exceptionType] + frames.map(\.location)
+        } else {
+            parts = [report.exceptionType, steady(report.reason)] + frames.map { $0.symbolName ?? ($0.imageName ?? "?") }
+        }
         return fnv1a64(parts.joined(separator: "\n"))
+    }
+
+    /// A reason without what changes from one run (or build) to the next:
+    /// each run of hex digits after `0x`, and each run of digits, made `#`
+    /// (`KERN_INVALID_ADDRESS at 0x10` and `at 0x28` are the same; so are
+    /// `Foo.swift:12` and `Foo.swift:14`, a line moved by an edit).
+    static func steady(_ reason: String?) -> String {
+        var out = "", chars = Array(reason ?? ""), index = 0
+        while index < chars.count {
+            if chars[index] == "0", index + 1 < chars.count, chars[index + 1] == "x" || chars[index + 1] == "X" {
+                index += 2
+                while index < chars.count, chars[index].isHexDigit { index += 1 }
+                out += "#"
+            } else if chars[index].isNumber {
+                while index < chars.count, chars[index].isNumber { index += 1 }
+                out += "#"
+            } else {
+                out.append(chars[index])
+                index += 1
+            }
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 64-bit FNV-1a of the text's UTF-8, as 16 lowercase hex digits.
