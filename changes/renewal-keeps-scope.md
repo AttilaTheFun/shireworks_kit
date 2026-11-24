@@ -1,0 +1,1 @@
+- **A renewal keeps the token's scope where GitHub's answer says none** (NCH's review of #9): `covers` would otherwise take the renewed token to reach everything.

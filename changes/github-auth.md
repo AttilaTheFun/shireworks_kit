@@ -1,0 +1,1 @@
+- GitHubAuth: device-flow sign-in (`GitHubDeviceFlow`), `GitHubToken`, its stores (`KeychainTokenStore` in the host app's own access group, `MemoryTokenStore`) and `GitHubCredentials`, with the names and behaviour of the owner's GitHub client; the client id, keychain service and access group come from the host.

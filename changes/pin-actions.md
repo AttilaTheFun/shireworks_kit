@@ -1,0 +1,1 @@
+- The Release workflow's actions are pinned by commit (checkout v5.1.0, upload-artifact v4.6.2, download-artifact v4.3.0), as its Swift image already is by digest.

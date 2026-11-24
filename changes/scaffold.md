@@ -1,0 +1,1 @@
+- The package: GitHubAuth, GitHubIssues, IssueComposer and ShakeKit, with IssueComposer's draft model (attachments, placeholders rewritten to their uploaded URLs).

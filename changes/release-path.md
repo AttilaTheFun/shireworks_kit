@@ -1,0 +1,1 @@
+- The release path: the Release workflow (tests on Linux and macOS, an iOS Simulator build, the proof, the draft), and README's "Releasing".

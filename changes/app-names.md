@@ -1,0 +1,1 @@
+- docs: name the two logan-shire-shake apps by client id, record the OAuth upload test, and fix the drafts and rollout sections.
