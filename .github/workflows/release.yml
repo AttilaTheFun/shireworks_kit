@@ -106,6 +106,6 @@ jobs:
           ! gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || { echo "::error::v$VERSION exists"; exit 1; }
           before="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           if [ -n "$before" ]; then mapfile -t added < <(git diff --diff-filter=A --name-only "$before" HEAD -- changes/); else added=(changes/*.md); fi
-          { for f in "${added[@]}"; do [ -f "$f" ] && cat "$f"; done; echo; echo "Proposed from $GITHUB_SHA by run $GITHUB_RUN_ID. Its proof (proof.zip) is its tests' results on Linux and macOS, with the libraries built for the iOS Simulator, compared with the release before's (proof-diff.json)."; } > notes.md
+          { for f in "${added[@]}"; do [ -f "$f" ] && [ "$f" != changes/README.md ] && cat "$f"; done; echo; echo "Proposed from $GITHUB_SHA by run $GITHUB_RUN_ID. Its proof (proof.zip) is its tests' results on Linux and macOS, with the libraries built for the iOS Simulator, compared with the release before's (proof-diff.json)."; } > notes.md
           gh release create "v$VERSION" -R "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "Shireworks Kit $VERSION" \
             --notes-file notes.md proof.zip proof-diff.json
