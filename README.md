@@ -61,6 +61,15 @@ Every production build of an app the owner distributes through Shireworks:
 5. **Has a link scheme, its own name** (`<name>://`) in CFBundleURLTypes and
    its builds.json's `urlSchemes`, which Applications opens it by; on the
    iPhone and iPad, Shireworks lists the scheme to ask iOS about it.
+6. **On a Mac, lets Shireworks update it while it runs:** `ShireworksKit.start()`
+   answers Shireworks' offers of its newer build (automatic, or a person's
+   Install or Update). With no handler, the kit's update sheet asks, in
+   front of the app's window: Update Now quits the app through its normal
+   path (`NSApplication.terminate`) and Shireworks installs the build and
+   opens it again; Later asks again in an hour. An app that must decide
+   itself (work in progress, an install of its own) registers
+   `AppUpdates.register(autoUpdate:)` before `start()`
+   (docs/updates/Updates.md, "Updating automatically").
 
 ## From update_kit and shake_kit
 

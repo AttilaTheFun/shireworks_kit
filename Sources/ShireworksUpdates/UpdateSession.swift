@@ -19,6 +19,9 @@ public final class UpdateSession {
     private let autoUpdate: @MainActor () -> AutoUpdateHandler?
     private let installHook: @MainActor () -> AutoUpdateInstaller?
     private let now: @Sendable () -> Date
+    /// How often the offers are looked at besides the signal and the app's
+    /// activations, in case a signal was missed.
+    private let offersInterval: Duration
     /// The offers' answerer, once `answerOffers` has made it (a Mac's).
     public private(set) var responder: OfferResponder?
 
@@ -27,7 +30,7 @@ public final class UpdateSession {
                 handler: @escaping @MainActor () -> UpdateHandler? = { nil },
                 autoUpdate: @escaping @MainActor () -> AutoUpdateHandler? = { nil },
                 installHook: @escaping @MainActor () -> AutoUpdateInstaller? = { nil },
-                now: @escaping @Sendable () -> Date = { Date() }) {
+                now: @escaping @Sendable () -> Date = { Date() }, offersInterval: Duration = .seconds(300)) {
         self.store = store
         self.app = app
         self.signal = signal
@@ -37,6 +40,7 @@ public final class UpdateSession {
         self.autoUpdate = autoUpdate
         self.installHook = installHook
         self.now = now
+        self.offersInterval = offersInterval
         checker = UpdateChecker(store: store, app: app)
     }
 
@@ -75,9 +79,12 @@ public final class UpdateSession {
     }
 
     /// A Mac's: the offers answered, now (at launch: an install this app
-    /// started is settled first) and each time the group's signal comes.
-    /// Go ahead installs with the update handler as it is then, else
-    /// through Applications. Returns the task that watches the signal.
+    /// started is settled first), each time the group's signal comes, each
+    /// time the app becomes active, and every `offersInterval` (five
+    /// minutes) in case a signal was missed. The handler of offers as it is
+    /// then decides, else the update sheet. Go ahead installs with the
+    /// update handler as it is then, else through Applications. Returns the
+    /// task that watches; cancelling it stops all three.
     @discardableResult
     public func answerOffers(failed: @escaping @Sendable (String) -> Void = { _ in }) async -> Task<Void, Never> {
         let goAhead = installer(handler: { [weak self] update in
@@ -90,15 +97,25 @@ public final class UpdateSession {
             }
         })
         let responder = OfferResponder(store: store, app: app, installer: goAhead, system: system,
-                                       handler: { [weak self] offer in await (self?.autoUpdate()?(offer) ?? .goAhead) },
+                                       autoUpdate: { [weak self] in self?.autoUpdate() },
                                        installHook: { [weak self] offer in await self?.installHook()?(offer) },
-                                       installsFromZip: UpdateKitInfo.mainInstallsFromZip)
+                                       installsFromZip: UpdateKitInfo.mainInstallsFromZip, now: now)
         self.responder = responder
         do { try await responder.launched() } catch { failed("The offer was not looked at: \(error)") }
-        let signal = self.signal
-        return Task { @MainActor in
-            for await _ in signal.changes() {
-                do { try await responder.look() } catch { failed("The offer was not looked at: \(error)") }
+        let signal = self.signal, activations = system.activations(), interval = offersInterval
+        let look: @MainActor @Sendable () async -> Void = {
+            do { try await responder.look() } catch { failed("The offer was not looked at: \(error)") }
+        }
+        let watches = [
+            Task { @MainActor in for await _ in signal.changes() { await look() } },
+            Task { @MainActor in for await _ in activations { await look() } },
+            Task { @MainActor in while (try? await Task.sleep(for: interval)) != nil { await look() } },
+        ]
+        return Task {
+            await withTaskCancellationHandler {
+                for watch in watches { await watch.value }
+            } onCancel: {
+                for watch in watches { watch.cancel() }
             }
         }
     }

@@ -132,6 +132,14 @@ app with the setting on comes. Of two Applications offering at once, one
 makes it (`makeOffer`, in one transaction that takes the write lock), and
 that one carries it out.
 
+**A person's offer** (migration 5, `offers.requested_by_person`): Install or
+Update on an app's page in Shireworks makes an offer too, whether or not the
+app's "Update automatically" is on (`makeOffer(…, byPerson: true)`; the
+setting is the distributor's to read), and the app's handler sees it
+(`UpdateOffer.byPerson`). A person's offer of the build already offered
+replaces that offer when it waits, was deferred, declined or failed, so the
+app asks again at once; never one under way or installed.
+
 **Applications, with an offer:**
 
 - the app **isn't running**: it installs the build at once (and doesn't
@@ -141,16 +149,16 @@ that one carries it out.
   the build is installed once the app has quit.
 
 **The app's answer** (`UpdateDecision`), from its handler, asked once an
-offer, on the main actor; without one, go ahead:
+offer, on the main actor; without one, the update sheet's (below):
 
     AppUpdates.register(autoUpdate: { offer in   // before start
         .goAhead                                 // or .deferUntilReady, .decline(reason:), .installMyself
     })
 
 - **`goAhead`**: the app asks Applications to install and quits at once, as
-  the banner's Install does (the owner: "straight away. they have to
-  implement the handler if they want control over this"). Applications puts
-  the build in place and opens it again.
+  the banner's Install did, through `NSApplication.terminate(nil)` (the
+  app's delegate still has its say). Applications puts the build in place
+  and opens it again.
 - **`deferUntilReady`**: nothing, until the app calls
   `AppUpdates.readyToUpdate()` (when the user agrees, or its work is done):
   then as go ahead. A newer build offered meanwhile replaces the offer.
@@ -198,8 +206,33 @@ offer, on the main actor; without one, go ahead:
   waits. Applications deletes the bundle once the
   offer is installed or failed.
 
-`OfferResponder` is the app's side (portable, tested on Linux);
-`AppUpdates.start()` runs it on a Mac at launch and at each signal.
+**The update sheet**, the answer of an app with no handler (the owner,
+2026-11-24, in place of going ahead at once): an alert saying "<App>
+<version> is ready. Updating quits <App>; Shireworks installs it and opens
+it again.", with **Update Now** (go ahead) and **Later** (deferred). It is
+the kit's own AppKit alert (`AppleUpdateSystem`), so every app has it with
+no code and no view modifier, whether its windows are SwiftUI's or AppKit's
+or it has none: a sheet on the app's key (or main) window when one is free,
+else an alert window of its own. A regular app is asked only while it is in
+front, so the alert never comes up behind another app or takes the front;
+an offer that comes while it is in the background waits for it to become
+active. An accessory app (a menu-bar app, seldom in front) is brought
+forward for it. Not while another modal window is up. After Later the
+offer stays deferred and the sheet asks again at the first look an hour or
+more on (its `updated_at` is when Later was said, so the hour holds across
+relaunches); a newer build, or a person's asking again, is a new offer and
+asks at once. A handler's `deferUntilReady` waits for `readyToUpdate()` as
+before.
+
+**Looking at the offer:** at launch, on each signal, each time the app
+becomes active (AppKit's did-become-active), and every five minutes while
+it runs, in case a signal was missed (`UpdateSession`'s `offersInterval`).
+Each look asks at most once an offer: one being answered isn't asked again.
+
+`OfferResponder` is the app's side (portable, tested on Linux: its choice
+between the handler, the sheet and nothing is `OfferResponder.action`);
+`AppUpdates.start()` runs it on a Mac. iPhones and iPads don't answer
+offers: iOS lets nothing force an install.
 
 ## The app group
 

@@ -1,8 +1,9 @@
 import Foundation
 
 /// An app's side of updating automatically on a Mac (docs/Updates.md):
-/// answers Applications' offer of its newest build with its handler (go
-/// ahead when it has none), carries the answer out, and at each launch
+/// answers Applications' offer of its newest build with its handler, or,
+/// when it has none, the update sheet's answer (Update Now or Later, asked
+/// again an hour after Later); carries the answer out; and at each launch
 /// settles what came of an offer it was installing. `AppUpdates` runs one;
 /// tests run one with a fake system.
 @MainActor
@@ -13,8 +14,13 @@ public final class OfferResponder {
     /// Asks Applications to install and quits the app (go ahead).
     public let installer: UpdateInstaller
     public let system: any UpdateSystem
-    let handler: AutoUpdateHandler?
+    /// The handler of offers as it is when one comes: none, the update sheet.
+    let handler: @MainActor () -> AutoUpdateHandler?
     let installHook: AutoUpdateInstaller?
+    /// When it is, for asking again after Later.
+    let now: @Sendable () -> Date
+    /// How long after Later the update sheet asks again.
+    let askAgainAfter: TimeInterval
     /// Whether the app, installing itself, takes its build as its zip.
     let installsFromZip: Bool
     /// The offer being answered or installed, so a signal heard meanwhile
@@ -24,15 +30,55 @@ public final class OfferResponder {
     /// called: once each, however long the app waits before installing.
     private var hooked: Set<String> = []
 
+    public convenience init(store: AppGroupStore, app: InstalledApp, installer: UpdateInstaller, system: any UpdateSystem,
+                            handler: AutoUpdateHandler?, installHook: AutoUpdateInstaller?, installsFromZip: Bool,
+                            now: @escaping @Sendable () -> Date = { Date() }, askAgainAfter: TimeInterval = 3_600) {
+        self.init(store: store, app: app, installer: installer, system: system, autoUpdate: { handler }, installHook: installHook,
+                  installsFromZip: installsFromZip, now: now, askAgainAfter: askAgainAfter)
+    }
+
+    /// One that looks its handler of offers up as each offer comes
+    /// (`autoUpdate`): one registered after start is asked all the same.
     public init(store: AppGroupStore, app: InstalledApp, installer: UpdateInstaller, system: any UpdateSystem,
-                handler: AutoUpdateHandler?, installHook: AutoUpdateInstaller?, installsFromZip: Bool) {
+                autoUpdate: @escaping @MainActor () -> AutoUpdateHandler?, installHook: AutoUpdateInstaller?, installsFromZip: Bool,
+                now: @escaping @Sendable () -> Date = { Date() }, askAgainAfter: TimeInterval = 3_600) {
         self.store = store
         self.app = app
         self.installer = installer
         self.system = system
-        self.handler = handler
+        self.handler = autoUpdate
         self.installHook = installHook
         self.installsFromZip = installsFromZip
+        self.now = now
+        self.askAgainAfter = askAgainAfter
+    }
+
+    /// What an offer asks of the app now.
+    enum Action: Equatable {
+        /// Nothing: answered already, under way, or Later less than
+        /// `askAgainAfter` ago.
+        case none
+        /// The app's handler decides.
+        case askHandler
+        /// The update sheet asks.
+        case showSheet
+    }
+
+    /// What an offer asks of the app now: a new one, its handler's answer,
+    /// else the update sheet's; a deferred one, with no handler (the sheet's
+    /// Later), the sheet again once `askAgainAfter` has passed since (either
+    /// way, for a clock that moved). A handler's deferral waits for
+    /// `readyToUpdate()`. A newer build, or a person's asking again, is a new
+    /// offer, so it asks at once.
+    static func action(for offer: UpdateOffer, hasHandler: Bool, now: Date, askAgainAfter: TimeInterval) -> Action {
+        switch offer.state {
+        case .offered:
+            return hasHandler ? .askHandler : .showSheet
+        case .deferred where !hasHandler:
+            return abs(now.timeIntervalSince(offer.updatedAt)) >= askAgainAfter ? .showSheet : .none
+        default:
+            return .none
+        }
     }
 
     /// At launch: says this app answers offers, settles one it was
@@ -47,23 +93,37 @@ public final class OfferResponder {
         try await look()
     }
 
-    /// Looks at the app's offer and acts on it: answers a new one, calls the
-    /// install hook with one handed over. At launch, on each signal.
+    /// Looks at the app's offer and acts on it: answers a new one (or one
+    /// deferred by the update sheet's Later, an hour on), calls the install
+    /// hook with one handed over. At launch, on each signal, every few
+    /// minutes and at each activation (`UpdateSession.answerOffers`).
     public func look() async throws {
         guard let offer = try await store.offer(bundleID: app.bundleID), !busy.contains(Self.key(offer)) else { return }
         busy.insert(Self.key(offer))
         defer { busy.remove(Self.key(offer)) }
         switch offer.state {
-        case .offered:
+        case .offered, .deferred:
             // One of a build that isn't newer than this one is no offer.
             guard app.appVersion < offer.appVersion else {
-                try await store.moveOffer(bundleID: offer.bundleID, version: offer.version, build: offer.build, from: [.offered],
+                try await store.moveOffer(bundleID: offer.bundleID, version: offer.version, build: offer.build, from: [offer.state],
                                           to: .installed)
                 await system.databaseChanged()
                 return
             }
-            let decision = await handler?(offer) ?? .goAhead
-            guard try await store.moveOffer(bundleID: offer.bundleID, version: offer.version, build: offer.build, from: [.offered],
+            let handler = handler()
+            let decision: UpdateDecision
+            switch Self.action(for: offer, hasHandler: handler != nil, now: now(), askAgainAfter: askAgainAfter) {
+            case .none:
+                return
+            case .askHandler:
+                guard let handler else { return }
+                decision = await handler(offer)
+            case .showSheet:
+                // Not shown now (the app isn't in front): the next look asks.
+                guard let answer = await system.showUpdateSheet(offer) else { return }
+                decision = answer == .updateNow ? .goAhead : .deferUntilReady
+            }
+            guard try await store.moveOffer(bundleID: offer.bundleID, version: offer.version, build: offer.build, from: [offer.state],
                                             to: decision.state, note: decision.note) else { return }
             await system.databaseChanged()
             if decision == .goAhead { try await goAhead(offer) }

@@ -67,6 +67,12 @@ enum StoreSchema {
         ALTER TABLE offers ADD COLUMN bundle_sha256 TEXT;
         ALTER TABLE offers ADD COLUMN bundle_name TEXT;
         """,
+        // 5: whether a person asked for the offer (Install or Update in
+        // Shireworks) rather than "Update automatically" making it: an
+        // offer from before says no.
+        """
+        ALTER TABLE offers ADD COLUMN requested_by_person INTEGER NOT NULL DEFAULT 0;
+        """,
     ]
 
     /// Write-ahead logging, so one app reads while another writes (the mode

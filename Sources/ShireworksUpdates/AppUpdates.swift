@@ -58,11 +58,13 @@ public final class AppUpdates {
     // MARK: Updating automatically (a Mac)
 
     /// The app's answer to Applications' offers of its newest build, when
-    /// its "Update automatically" is on (docs/Updates.md): go ahead (the
-    /// default, without a handler: the app quits at once and Applications
-    /// puts the build in place and opens it), defer until
-    /// `readyToUpdate()`, decline, or install it itself. Register before
-    /// `start`.
+    /// its "Update automatically" is on or a person asked (docs/Updates.md):
+    /// go ahead (the app quits and Applications puts the build in place and
+    /// opens it), defer until `readyToUpdate()`, decline, or install it
+    /// itself. Without a handler, the update sheet asks: "<App> <version> is
+    /// ready", Update Now (go ahead) or Later (asked again in an hour), as a
+    /// sheet on the app's front window, or an alert of its own, while the app
+    /// is in front. Register before `start`.
     public static func register(autoUpdate: @escaping AutoUpdateHandler) {
         autoUpdateHandler = autoUpdate
     }
@@ -139,8 +141,9 @@ public final class AppUpdates {
                 }
             }
         }
-        // Offers are a Mac's: answered at launch and on each signal, by
-        // every app (Applications too, of its own updates).
+        // Offers are a Mac's: answered at launch, on each signal, at each
+        // activation and every five minutes, by every app (Applications
+        // too, of its own updates).
         #if os(macOS)
         let log = Self.log
         Task { @MainActor in

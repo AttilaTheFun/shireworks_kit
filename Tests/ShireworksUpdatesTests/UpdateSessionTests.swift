@@ -17,12 +17,21 @@ final class UpdateSessionTests {
     deinit { temporary.remove() }
 
     private func session(platform: UpdatePlatform = .macOS, system: FakeSystem = FakeSystem(),
-                         running version: String = "0.39.2") -> UpdateSession {
+                         running version: String = "0.39.2", offersInterval: Duration = .seconds(300)) -> UpdateSession {
         let store = AppGroupStore(fileURL: temporary.file, now: { Date(timeIntervalSince1970: 1_000) })
         return UpdateSession(store: store, app: InstalledApp(bundleID: visor, version: version, build: "1"),
                              signal: UpdateSignal(appGroup: "group.example." + UUID().uuidString), system: system,
                              platform: platform, handler: { [weak self] in self?.registered },
-                             now: { Date(timeIntervalSince1970: 50) })
+                             now: { Date(timeIntervalSince1970: 50) }, offersInterval: offersInterval)
+    }
+
+    /// Waits up to two seconds for the system to have been asked `event`.
+    private func waitFor(_ event: String, on system: FakeSystem) async throws -> Bool {
+        for _ in 0..<200 {
+            if await system.events.contains(event) { return true }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return false
     }
 
     private func newer(_ session: UpdateSession) async throws {
@@ -105,6 +114,34 @@ final class UpdateSessionTests {
         defer { watch.cancel() }
         #expect(await system.events.contains("open Applications"))
         #expect(await system.events.last == "terminate")
+    }
+
+    /// An offer made with no signal heard (one missed) is picked up by the
+    /// periodic look.
+    @Test func aMissedSignalIsMadeUpForByThePeriodicLook() async throws {
+        let system = FakeSystem()
+        let session = session(system: system, offersInterval: .milliseconds(20))
+        let watch = await session.answerOffers()
+        defer { watch.cancel() }
+        #expect(await system.events.isEmpty)
+        _ = try await session.store.makeOffer(bundleID: visor, version: "0.40.1", build: "1", offeredBy: "com.example.Applications")
+        #expect(try await waitFor("sheet 0.40.1", on: system))
+        #expect(try await waitFor("terminate", on: system), "Update Now: Applications asked, and the app quits")
+    }
+
+    /// And by the app's coming to the front, well before the next periodic look.
+    @Test func anActivationLooksAgain() async throws {
+        let system = FakeSystem()
+        await system.setSheetAnswers([.later])
+        let session = session(system: system, offersInterval: .seconds(3_600))
+        let watch = await session.answerOffers()
+        defer { watch.cancel() }
+        _ = try await session.store.makeOffer(bundleID: visor, version: "0.40.1", build: "1", offeredBy: "com.example.Applications")
+        #expect(await system.events.isEmpty)
+        system.activate()
+        #expect(try await waitFor("sheet 0.40.1", on: system))
+        #expect(try await waitFor("changed", on: system))
+        #expect(try await session.store.offer(bundleID: visor)?.state == .deferred, "Later")
     }
 
     /// A direct check of the app's releases writes the newer build it finds,
