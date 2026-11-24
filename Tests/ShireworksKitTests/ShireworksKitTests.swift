@@ -5,9 +5,10 @@ import Testing
 
 struct ShireworksKitTests {
     @Test func oneImportReachesEveryCapability() {
-        // ShireworksUpdates, GitHubAuth and ShireworksShake, by a name each.
+        // ShireworksUpdates, GitHubAuth, ShireworksShake and ShireworksCrashes, by a name each.
         _ = UpdateKitInfo.self
         _ = GitHubSharedSignIn.self
         _ = ShakeKitConfiguration.self
+        _ = CrashReport.self
     }
 }
