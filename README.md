@@ -9,6 +9,7 @@ update_kit and shake_kit, whose histories it carries.
 | `ShireworksKit` | All of the below but the installer's rules, in one import |
 | `ShireworksShake` | Shake to report a bug, filed as a GitHub issue (docs/shake) |
 | `ShireworksUpdates` | Record the build the app is, and hear of its updates (docs/updates) |
+| `ShireworksCrashes` | The app's crashes, filed as GitHub issues, one a crash (docs/crashes) |
 | `ShireworksUpdatesInstall` | A sandboxed Mac app's installer service's rules (docs/updates/Installing.md) |
 | `GitHubAuth` | The sign-in an owner's apps share |
 | `GitHubIssues` | GitHub's issues, as a client |
@@ -20,18 +21,46 @@ update_kit and shake_kit, whose histories it carries.
 
     import ShireworksKit
 
-    WindowGroup {
-        ContentView()
-            .shakeToReport(repository: "owner/app")
-    }
-    .commands { ShakeKitCommands() }   // Help › Report a Bug… (⌥⌘B)
+    @main struct ExampleApp: App {
+        init() { ShireworksKit.start() }   // crashes and updates, once, at launch
 
-An app is configured by its Info.plist, which the distributor's CI stamps
-in: the shared sign-in's keys (`GitHubSharedClientID`,
-`GitHubSharedKeychainGroup`, `GitHubSharedLockGroup`), Updates' app group
-and bundle ids (`UpdateKitAppGroup`, `UpdateKitApplicationsBundleIDs`,
-`UpdateKitReleasesRepository`) and Shake's scope (`ShakeKitScope`). Without
-them a capability does nothing.
+        var body: some Scene {
+            WindowGroup {
+                ContentView()
+                    .shakeToReport(repository: "owner/app")
+            }
+            .commands { ShakeKitCommands() }   // Help › Report a Bug… (⌥⌘B)
+        }
+    }
+
+The last run's crash is filed at the next launch, as an issue in the app's
+repository (docs/crashes); a menu-bar app adds `ShakeKitReportWindow` and
+`ShakeKitReportButton` (docs/shake).
+
+## Adopting: what every app meets
+
+Every production build of an app the owner distributes through Shireworks:
+
+1. **Links Shireworks Kit** (`ShireworksKit`) and calls `ShireworksKit.start()`
+   at launch, in every process that runs the app's code (a headless server
+   process too, for its crashes), with `.shakeToReport(repository:)` on each
+   window and `ShakeKitCommands` on a Mac.
+2. **Records its build** in the shared app group: `ShireworksKit.start()`
+   does it (Updates), given the group key and entitlement below, so
+   Applications always knows the installed build (never "Unknown").
+3. **Carries, stamped in by its CI** (never in its repository):
+   - `GitHubSharedClientID`, `GitHubSharedKeychainGroup`,
+     `GitHubSharedLockGroup`: the shared sign-in reports and crashes file with;
+   - `ShakeKitScope` (`repo` for a private repository);
+   - `ShireworksRepository`: `owner/name`, where crashes are filed;
+   - `UpdateKitAppGroup` and, on a Mac, `UpdateKitApplicationsBundleIDs`;
+   - `BuildVariant`: `Production`, `Alpha`, `Beta` or `AdHoc`.
+4. **Is entitled** to the app group (application-groups) and the shared
+   sign-in's keychain group (keychain-access-groups), granted by its
+   profiles.
+5. **Has a link scheme, its own name** (`<name>://`) in CFBundleURLTypes and
+   its builds.json's `urlSchemes`, which Applications opens it by; on the
+   iPhone and iPad, Shireworks lists the scheme to ask iOS about it.
 
 ## From update_kit and shake_kit
 
@@ -49,7 +78,8 @@ update_kit's and shake_kit's tags stay in those repositories, so their pins
 keep resolving until each app moves; then they're archived.
 
 `swift test` passes on Linux and on a Mac. Updates works on Linux and
-Isomer's hosts too; Shake's views are Apple's systems' only for now.
+Isomer's hosts too; Shake's views are Apple's systems' only for now, and
+Crashes catches crashes on iOS and macOS only.
 
 ## Releasing
 

@@ -2,10 +2,10 @@ import Foundation
 import GitHubAuth
 
 /// GitHub's issues, as the user: an issue opened, read, edited, closed,
-/// reopened or commented on, a comment edited or deleted, a repository's
-/// labels and conversations read, and an attachment uploaded
-/// (`uploadAttachment`). A repository is named as GitHub writes it,
-/// "owner/name".
+/// reopened or commented on, issues searched for, a comment edited or
+/// deleted, a repository's labels and conversations read, and an attachment
+/// uploaded (`uploadAttachment`). A repository is named as GitHub writes
+/// it, "owner/name".
 ///
 /// Each request carries the token `token` gives at the time
 /// (GitHubCredentials.access: renewed first where it runs out), and goes
@@ -77,6 +77,24 @@ public final class GitHubIssuesClient: Sendable {
     /// Opens a closed issue again: what GitHub made of it.
     public func reopenIssue(_ number: Int, in repository: String) async throws -> GitHubIssue {
         try await editIssue(number, in: repository, IssueChange(state: "open"))
+    }
+
+    // MARK: Search
+
+    /// What GitHub's search finds for `query`, in its syntax
+    /// (`repo:owner/name is:issue in:body "words"`), best match first: up to
+    /// `pages` hundred. Pull requests too, unless the query says `is:issue`.
+    /// The search trails a change by a little: an issue opened a moment ago
+    /// may not be found yet.
+    public func searchIssues(_ query: String, pages: Int = 1) async throws -> [GitHubIssue] {
+        struct Found: Decodable { let items: [GitHubIssue] }
+        var all: [GitHubIssue] = []
+        for page in 1...max(pages, 1) {
+            let found: Found = try await get("/search/issues?q=\(Self.queryEncoded(query))&per_page=100&page=\(page)")
+            all += found.items
+            if found.items.count < 100 { break }
+        }
+        return all
     }
 
     // MARK: Comments

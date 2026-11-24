@@ -2,7 +2,8 @@
 
 The capabilities an app developed through Shireworks builds in, one library
 each (README). Shake's design is docs/shake/Design.md, Updates'
-docs/updates/Updates.md and its installer's docs/updates/Installing.md.
+docs/updates/Updates.md and its installer's docs/updates/Installing.md,
+Crashes' docs/crashes/README.md.
 
 - **This repository is public.** Never add a person's name (write "the
   owner"), a device or host name, a real IP address or hostname, a private

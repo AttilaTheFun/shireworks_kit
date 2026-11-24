@@ -9,6 +9,8 @@
 // - ShireworksUpdates: record the build the app is and hear of its updates
 //   (update_kit's UpdateKit); ShireworksUpdatesInstall, the Mac installer
 //   service's rules.
+// - ShireworksCrashes: the app's crashes, filed as GitHub issues (KSCrash
+//   records them on Apple's systems, on the device alone).
 // - GitHubAuth, GitHubIssues and IssueComposer: the shared sign-in, the
 //   issues client and the composer the capabilities file with.
 // - ShireworksKit: all of them, in one import.
@@ -26,6 +28,7 @@ let package = Package(
         .library(name: "ShireworksKit", targets: ["ShireworksKit"]),
         .library(name: "ShireworksShake", targets: ["ShireworksShake"]),
         .library(name: "ShireworksUpdates", targets: ["ShireworksUpdates"]),
+        .library(name: "ShireworksCrashes", targets: ["ShireworksCrashes"]),
         // An installer service's rules and its Mac (docs/updates/Installing.md): for the unsandboxed service inside
         // a sandboxed app, which links nothing else of the package.
         .library(name: "ShireworksUpdatesInstall", targets: ["ShireworksUpdatesInstall"]),
@@ -36,15 +39,23 @@ let package = Package(
     dependencies: [
         // A range, not one version: the apps pin swift_sql themselves, and their pin is the one taken.
         .package(url: "https://github.com/AttilaTheFun/swift_sql.git", from: "0.35.0"),
+        // Crashes' crash recorder on Apple's systems, built from source, one version: an implementation detail, none
+        // of its types in the API (docs/crashes).
+        .package(url: "https://github.com/kstenerud/KSCrash.git", exact: "2.6.1"),
     ],
     targets: [
-        .target(name: "ShireworksKit", dependencies: ["ShireworksShake", "ShireworksUpdates", "GitHubAuth", "GitHubIssues", "IssueComposer"]),
+        .target(name: "ShireworksKit", dependencies: ["ShireworksShake", "ShireworksUpdates", "ShireworksCrashes", "GitHubAuth", "GitHubIssues",
+                                                      "IssueComposer"]),
         .target(name: "GitHubAuth"),
         .target(name: "GitHubIssues", dependencies: ["GitHubAuth"]),
         .target(name: "IssueComposer"),
         .target(name: "ShireworksShake", dependencies: ["GitHubAuth", "GitHubIssues", "IssueComposer"]),
         .target(name: "ShireworksUpdates", dependencies: [.product(name: "SwiftSQL", package: "swift_sql")]),
         .target(name: "ShireworksUpdatesInstall"),
+        .target(name: "ShireworksCrashes", dependencies: [
+            "GitHubAuth", "GitHubIssues",
+            .product(name: "Recording", package: "KSCrash", condition: .when(platforms: [.iOS, .macOS])),
+        ]),
         .testTarget(name: "ShireworksKitTests", dependencies: ["ShireworksKit"]),
         .testTarget(name: "GitHubAuthTests", dependencies: ["GitHubAuth"]),
         .testTarget(name: "GitHubIssuesTests", dependencies: ["GitHubIssues"]),
@@ -52,6 +63,7 @@ let package = Package(
         .testTarget(name: "ShireworksShakeTests", dependencies: ["ShireworksShake", "GitHubAuth", "GitHubIssues", "IssueComposer"]),
         .testTarget(name: "ShireworksUpdatesTests", dependencies: ["ShireworksUpdates", .product(name: "SwiftSQL", package: "swift_sql")]),
         .testTarget(name: "ShireworksUpdatesInstallTests", dependencies: ["ShireworksUpdatesInstall"]),
+        .testTarget(name: "ShireworksCrashesTests", dependencies: ["ShireworksCrashes", "GitHubAuth", "GitHubIssues"]),
     ],
     swiftLanguageModes: [.v6]
 )

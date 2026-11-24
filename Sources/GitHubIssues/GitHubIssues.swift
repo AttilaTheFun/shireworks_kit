@@ -5,9 +5,12 @@
 //
 // - GitHubIssue, IssueComment, GitHubLabel and GitHubUser: GitHub's answers;
 // - IssueChange: an edit of an issue, the parts given set, the rest left;
-// - GitHubIssuesClient: an issue opened, read, edited, closed, reopened and
-//   commented on, a comment edited or deleted, a repository's labels, and an
-//   attachment uploaded (GitHub's own, `user-attachments`);
+// - GitHubIssuesClient: an issue opened, read, edited, closed, reopened,
+//   commented on and searched for, a comment edited or deleted, a
+//   repository's labels, and an attachment uploaded (GitHub's own,
+//   `user-attachments`);
+// - IssueRedaction: what is blanked out of an app's text before it goes in
+//   an issue;
 // - GitHubIssuesError: what GitHub refused that the host acts on (an
 //   attachment not taken).
 //
