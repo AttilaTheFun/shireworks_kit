@@ -86,6 +86,29 @@ struct CrashIssueTests {
         #expect(tiny.hasSuffix("<!-- shireworks-crash-version: 1.2.0 -->\n"))
     }
 
+    /// Without its details (a public repository's issue): no reason in the
+    /// title or the body, a line saying so, and no breadcrumbs; the rest as
+    /// ever, under the signature without the reason.
+    @Test func withoutTheDetails() {
+        var report = Fixtures.report()
+        report.reason = "Could not open \"Letter to a friend.txt\""
+        report.breadcrumbs = ["typed: hello there"]
+        #expect(CrashIssue.title(for: report, details: false) == "Crash: EXC_BAD_ACCESS (Example.List.item(at:))")
+        let body = CrashIssue.body(for: report, details: false)
+        #expect(body.hasPrefix("**EXC_BAD_ACCESS**: (reason left out: public repository)\n\nCaught as: mach"))
+        #expect(!body.contains("Letter") && !body.contains("hello there") && !body.contains("Breadcrumbs"))
+        #expect(body.contains("1   Example                         0x0000000100001a2b  Example.List.item(at:) (Example + 0x1a2b)"))
+        #expect(body.contains("<details><summary>Other threads (1)</summary>"))
+        #expect(body.contains("<details><summary>Binary images (2)</summary>"))
+        #expect(body.contains("| System | iOS 27.2 |"))
+        #expect(body.contains("| Signature | `\(report.signature(withReason: false))` |"))
+        #expect(body.hasSuffix("<!-- shireworks-crash: \(report.signature(withReason: false)) -->\n<!-- shireworks-crash-version: 1.2.0 -->\n"))
+        // With them (a private repository's), as before.
+        #expect(CrashIssue.title(for: report).contains("Letter to a friend.txt"))
+        #expect(CrashIssue.body(for: report).contains("hello there"))
+        #expect(!CrashIssue.comment(for: report).contains("Letter"))
+    }
+
     @Test func theComment() {
         let comment = CrashIssue.comment(for: Fixtures.report(version: "1.3.0", build: "50"))
         #expect(comment.hasPrefix("Again in 1.3.0 (50), iPhone17,1, iOS 27.2, 2026-11-01T09:41:00Z\n\n```\n0   libswiftCore.dylib"))

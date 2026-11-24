@@ -68,6 +68,14 @@ keeps one issue from build to build, at the cost of sometimes taking two
 crashes in one image for one (each comment carries its own crashing
 thread).
 
+In a public repository the reason isn't filed (see Privacy), so there that
+path leaves the reason out too: the exception's type and the frames alone,
+so a crash is never found by text its issue doesn't carry. Where every top
+frame has a symbol the two signatures are the same; where one hasn't, a
+public repository's signature differs from a private one's, so a
+repository that changes its visibility may get a new issue for a crash
+already filed, once.
+
 Its issue's body ends with two HTML comments, unseen on GitHub:
 
     <!-- shireworks-crash: <signature> -->
@@ -81,7 +89,8 @@ opened in this run it remembers, as the search trails a new issue by a
 little.
 
 - **None:** an issue opens, titled
-  `Crash: <type>: <short reason> (<top frame of the app's>)`, labelled
+  `Crash: <type>: <short reason> (<top frame of the app's>)`
+  (`Crash: <type> (<top frame of the app's>)` in a public repository), labelled
   `crash`, with the summary, the crashing thread in a code block, the app
   and device in a table, the other threads and binary images (and
   breadcrumbs, where a report has any; KSCrash's have none) folded in
@@ -108,6 +117,33 @@ details beyond the version, the system and the machine's model goes in. The
 recorder reads no memory and no console, and sends nothing anywhere: the
 only thing that leaves the device is the issue, filed as the signed-in
 user.
+
+### Public repositories
+
+Redaction catches what looks like a secret, not what a person wrote: an
+exception's reason ("Could not open \"Letter to a friend.txt\"") and the
+breadcrumbs can carry the user's own words. A public repository's issues
+are anyone's to read, so there they're left out:
+
+- Each filing pass asks GitHub first whether the repository is private
+  (`GET /repos/{owner}/{name}`, its `private`, with the same sign-in;
+  `GitHubIssuesClient.isPrivate(repository:)`). Where GitHub says it
+  isn't, or can't say (no network, a refusal other than a 401, an answer
+  without it), it counts as public. A 401 is a refused sign-in, as for
+  every other request: the crashes stay kept.
+- In a public repository the title is the exception's type and the top
+  frame (`Crash: EXC_BAD_ACCESS (MyApp + 0x1a2b)`); the body's summary says
+  `(reason left out: public repository)` in place of the reason, and the
+  breadcrumbs aren't there. The exception's type and how it was caught, the
+  frames, the other threads, the binary images, and the app, system and
+  device are, as in a private one's. The "Again in …" comments carry
+  neither the reason nor the breadcrumbs anywhere.
+- The signature there leaves the reason out (see "One issue a crash").
+
+An app whose reasons and breadcrumbs carry nothing of the user's can file
+them in a public repository too: `ShireworksCrashesPublicDetails` (a
+Boolean, true) in its Info.plist, or `CrashesConfiguration(publicDetails:
+true)`. Then the repository's visibility isn't asked.
 
 ## No sign-in
 

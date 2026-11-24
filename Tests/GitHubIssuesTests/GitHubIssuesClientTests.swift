@@ -246,6 +246,35 @@ import Testing
         #expect(redacted == "sent <redacted> for <redacted> to https://api.example.com/x?<redacted> <redacted>")
     }
 
+    /// Whether a repository is private: its `private`, asked each time,
+    /// its id remembered for uploads; an answer without it, or a refusal,
+    /// thrown.
+    @Test func aRepositorysVisibility() async throws {
+        let github = FakeGitHub { request in
+            Self.answer(request.url.path.hasSuffix("/secret")
+                ? #"{"id": 987654321, "full_name": "owner/secret", "private": true}"#
+                : #"{"id": 123456789, "node_id": "R_kgDOexample", "full_name": "owner/app", "private": false}"#)
+        }
+        let client = github.client()
+        #expect(try await client.isPrivate(repository: "owner/secret"))
+        #expect(try await client.isPrivate(repository: "owner/app") == false)
+        #expect(try await client.isPrivate(repository: "owner/app") == false)
+        #expect(github.requests.map(\.method) == ["GET", "GET", "GET"])
+        #expect(github.requests.first?.url.absoluteString == "https://api.github.com/repos/owner/secret")
+        #expect(github.requests.first?.headers["Authorization"] == "Bearer gho_fixture")
+        #expect(try await client.repositoryID(of: "owner/app") == 123456789)
+        #expect(github.requests.count == 3)
+
+        let unreadable = FakeGitHub { _ in Self.answer(#"{"id": 1, "full_name": "owner/app"}"#) }
+        await #expect(throws: GitHubError(status: 0, message: "GitHub's answer could not be read")) {
+            try await unreadable.client().isPrivate(repository: "owner/app")
+        }
+        let refused = FakeGitHub { _ in Self.answer(401, #"{"message": "Bad credentials"}"#) }
+        await #expect(throws: GitHubError(status: 401, message: "GitHub: Bad credentials")) {
+            try await refused.client().isPrivate(repository: "owner/app")
+        }
+    }
+
     // MARK: Attachments
 
     private static let repository = #"{"id": 123456789, "node_id": "R_kgDOexample", "full_name": "owner/app", "private": false}"#

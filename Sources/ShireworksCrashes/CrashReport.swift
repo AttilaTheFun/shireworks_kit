@@ -144,6 +144,11 @@ public struct CrashReport: Codable, Sendable, Equatable, Identifiable {
     /// what finds its issue.
     public var signature: String { CrashSignature.of(self) }
 
+    /// The signature an issue is filed under: with the reason (`signature`)
+    /// where its details go in, without it where they're left out (a public
+    /// repository's, `CrashSignature.of(_:withReason:)`).
+    public func signature(withReason: Bool) -> String { CrashSignature.of(self, withReason: withReason) }
+
     static func hex(_ value: UInt64) -> String { "0x" + String(value, radix: 16) }
 }
 
@@ -160,6 +165,13 @@ public struct CrashReport: Codable, Sendable, Equatable, Identifiable {
 /// occurrence's comment carries its own crashing thread), rather than making
 /// a new issue of the same crash at every build.
 ///
+/// Without the reason (`withReason` false: a public repository's issue, which
+/// leaves the reason out), that path takes the exception's type and the
+/// frames alone, so a crash is never found by text its issue doesn't carry.
+/// Where every top frame has a symbol the two are the same; where one hasn't,
+/// a public repository's signature differs from a private one's, and a
+/// repository made public (or private) may open a crash's issue again, once.
+///
 /// Hashed with 64-bit FNV-1a, as 16 hex digits: the same on every platform
 /// and in every process (unlike Swift's `Hasher`), with nothing to import.
 /// Not a cryptographic hash, and needn't be: it tells an app's crashes
@@ -168,13 +180,14 @@ public enum CrashSignature {
     /// How many frames go in.
     public static let frameCount = 3
 
-    public static func of(_ report: CrashReport) -> String {
+    public static func of(_ report: CrashReport, withReason: Bool = true) -> String {
         let frames = report.topFrames
         let parts: [String]
         if frames.allSatisfy({ $0.symbolName != nil }) {
             parts = [report.exceptionType] + frames.map(\.location)
         } else {
-            parts = [report.exceptionType, steady(report.reason)] + frames.map { $0.symbolName ?? ($0.imageName ?? "?") }
+            let reason = withReason ? [steady(report.reason)] : []
+            parts = [report.exceptionType] + reason + frames.map { $0.symbolName ?? ($0.imageName ?? "?") }
         }
         return fnv1a64(parts.joined(separator: "\n"))
     }

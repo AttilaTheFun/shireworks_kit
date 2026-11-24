@@ -6,6 +6,9 @@ import Foundation
 public struct CrashesConfiguration: Sendable, Equatable {
     /// The Info.plist key naming the repository crashes are filed in.
     public static let repositoryKey = "ShireworksRepository"
+    /// The Info.plist key (a Boolean) that files the reason and the
+    /// breadcrumbs in a public repository too.
+    public static let publicDetailsKey = "ShireworksCrashesPublicDetails"
 
     /// "owner/name", where crashes are filed; nil for none (they're kept,
     /// and filed by a build that names one).
@@ -22,6 +25,11 @@ public struct CrashesConfiguration: Sendable, Equatable {
     /// Whether crashes are filed at launch (or only kept, for a build that
     /// files them later, or a test).
     public var files: Bool
+    /// Whether an issue in a public repository carries the exception's
+    /// reason and the breadcrumbs, as a private one's does. Off by default:
+    /// they may carry what the user typed or saw, which redaction can't
+    /// tell apart, and a public repository's issues are anyone's to read.
+    public var publicDetails: Bool
 
     public init(
         repository: String? = nil,
@@ -29,7 +37,8 @@ public struct CrashesConfiguration: Sendable, Equatable {
         redactions: [String] = [],
         maxStored: Int = 20,
         maxAge: TimeInterval = 30 * 24 * 60 * 60,
-        files: Bool = true
+        files: Bool = true,
+        publicDetails: Bool = false
     ) {
         self.repository = repository
         self.labels = labels
@@ -37,17 +46,20 @@ public struct CrashesConfiguration: Sendable, Equatable {
         self.maxStored = maxStored
         self.maxAge = maxAge
         self.files = files
+        self.publicDetails = publicDetails
     }
 
     /// The configuration an Info.plist gives: its `ShireworksRepository`
     /// where set (a value a build didn't fill in, `$(…)`, counts as none),
-    /// the defaults otherwise.
+    /// and `ShireworksCrashesPublicDetails` where it's the Boolean true; the
+    /// defaults otherwise.
     public static func from(info: [String: Any]?) -> CrashesConfiguration {
         var configuration = CrashesConfiguration()
         if let text = (info?[repositoryKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !text.isEmpty, !text.contains("$("), text.contains("/") {
             configuration.repository = text
         }
+        configuration.publicDetails = info?[publicDetailsKey] as? Bool == true
         return configuration
     }
 

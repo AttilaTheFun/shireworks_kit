@@ -11,7 +11,17 @@ import GitHubIssues
 /// the newest app version it was seen in
 /// (`<!-- shireworks-crash-version: x.y.z -->`), which decides whether a
 /// closed issue opens again.
+///
+/// `details` false (an issue in a public repository, where anyone reads it)
+/// leaves out what may carry the user's own words, which redaction can't
+/// tell apart: the exception's reason (its line says it was left out) and
+/// the breadcrumbs. The exception's type and how it was caught, the frames,
+/// threads and images, and the app, system and device stay; the signature is
+/// then the one without the reason (`CrashReport.signature(withReason:)`).
 public enum CrashIssue {
+    /// What stands for the reason in a public repository's issue.
+    public static let reasonLeftOut = "(reason left out: public repository)"
+
     /// The most a body or a comment holds, in UTF-8 bytes: under GitHub's
     /// 65,536 characters, whatever the characters.
     public static let limit = 60_000
@@ -59,9 +69,10 @@ public enum CrashIssue {
 
     /// "Crash: EXC_BAD_ACCESS: KERN_INVALID_ADDRESS at 0x0 (MyApp + 0x1a2b)":
     /// the exception, the first line of its reason (shortened), and the top
-    /// frame of the app's own, else the top frame.
-    public static func title(for report: CrashReport, redactions: [String] = []) -> String {
-        var reason = redacted(report.reason, extra: redactions)
+    /// frame of the app's own, else the top frame. Without `details`, no
+    /// reason: "Crash: EXC_BAD_ACCESS (MyApp + 0x1a2b)".
+    public static func title(for report: CrashReport, redactions: [String] = [], details: Bool = true) -> String {
+        var reason = !details ? "" : redacted(report.reason, extra: redactions)
             .split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         if reason.count > 80 { reason = String(reason.prefix(79)) + "…" }
         var title = "Crash: " + report.exceptionType + (reason.isEmpty ? "" : ": " + reason)
@@ -85,9 +96,12 @@ public enum CrashIssue {
     }
 
     /// The issue's body: under `limit`, the folded parts cut first (the
-    /// largest first), then the crashing thread's outermost frames.
-    public static func body(for report: CrashReport, redactions: [String] = [], limit: Int = limit) -> String {
-        let head = summary(of: report)
+    /// largest first), then the crashing thread's outermost frames. Without
+    /// `details`, no reason and no breadcrumbs.
+    public static func body(for report: CrashReport, redactions: [String] = [], details: Bool = true,
+                            limit: Int = limit) -> String {
+        let signature = report.signature(withReason: details)
+        let head = summary(of: report, details: details)
         var crashing = frameLines(report.frames)
         var crashingDropped = 0
         var folded: [Folded] = []
@@ -101,17 +115,17 @@ public enum CrashIssue {
         if !report.images.isEmpty {
             folded.append(Folded(title: "Binary images (\(report.images.count))", lines: report.images.map(imageLine)))
         }
-        if let breadcrumbs = report.breadcrumbs, !breadcrumbs.isEmpty {
+        if details, let breadcrumbs = report.breadcrumbs, !breadcrumbs.isEmpty {
             folded.append(Folded(title: "Breadcrumbs (\(breadcrumbs.count))", lines: breadcrumbs))
         }
-        let markers = marker(report.signature) + "\n" + versionMarker(report.appVersion) + "\n"
+        let markers = marker(signature) + "\n" + versionMarker(report.appVersion) + "\n"
         let note = "Frames the device had no symbol for name their image and its offset; the binary images give "
             + "each image's UUID, to symbolicate them against the build's dSYMs."
 
         func compose() -> String {
             let thread = "The crashing thread, innermost frame first:\n\n"
                 + fenced(crashing.joined(separator: "\n") + (crashingDropped > 0 ? "\n… \(crashingDropped) more left out" : ""))
-            let parts = [head, thread, environment(of: report)] + folded.map(\.markdown) + [note]
+            let parts = [head, thread, environment(of: report, signature: signature)] + folded.map(\.markdown) + [note]
             return redacted(parts.joined(separator: "\n\n"), extra: redactions) + "\n\n" + markers
         }
 
@@ -145,7 +159,8 @@ public enum CrashIssue {
     }
 
     /// The comment a crash after the first adds: when and where, and its
-    /// crashing thread.
+    /// crashing thread (never the reason or the breadcrumbs, so the same in
+    /// a public repository).
     public static func comment(for report: CrashReport, redactions: [String] = [], limit: Int = limit) -> String {
         var lines = frameLines(report.frames)
         let head = "Again in \(version(of: report)), \(report.deviceModel), \(report.system), \(iso8601(report.date))"
@@ -175,21 +190,21 @@ public enum CrashIssue {
         IssueRedaction.redacted(text, extra: homeFolders + redactions)
     }
 
-    private static func summary(of report: CrashReport) -> String {
+    private static func summary(of report: CrashReport, details: Bool) -> String {
         var text = "**\(report.exceptionType)**"
-        let reason = report.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reason = details ? report.reason.trimmingCharacters(in: .whitespacesAndNewlines) : reasonLeftOut
         if !reason.isEmpty { text += ": " + reason }
         if let mechanism = report.mechanism { text += "\n\nCaught as: \(mechanism)" }
         return text
     }
 
-    private static func environment(of report: CrashReport) -> String {
+    private static func environment(of report: CrashReport, signature: String) -> String {
         let rows: [(String, String)] = [
             ("Version", version(of: report)),
             ("System", report.system),
             ("Device", report.deviceModel),
             ("Crashed", iso8601(report.date)),
-            ("Signature", "`\(report.signature)`"),
+            ("Signature", "`\(signature)`"),
         ]
         return (["| | |", "| --- | --- |"] + rows.map { "| \($0.0) | \($0.1.replacingOccurrences(of: "|", with: "\\|")) |" })
             .joined(separator: "\n")
