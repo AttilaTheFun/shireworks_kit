@@ -1,1 +1,0 @@
-- ShakeKitCommands leaves Report a Bug… out of the Help menu when ShakeKit is off.
