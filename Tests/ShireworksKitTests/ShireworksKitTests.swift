@@ -12,8 +12,8 @@ struct ShireworksKitTests {
         _ = CrashReport.self
     }
 
-    /// The one call at launch is there, with crashes' and updates' settings (not run: it would install the crash
-    /// recorder in the test runner).
+    /// The call for a process without SwiftUI views is there, with crashes' and updates' settings (not run here: it
+    /// would install the crash recorder in the test runner; StartTests runs it with its starters replaced).
     @MainActor @Test func oneCallStartsThem() {
         let start: @MainActor (CrashesConfiguration, String?) -> Void = ShireworksKit.start(crashes:appGroup:)
         _ = start

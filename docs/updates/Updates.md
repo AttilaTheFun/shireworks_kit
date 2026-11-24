@@ -63,11 +63,13 @@ Paths below under `app/` are Applications' own, in its repository.
 
 ## In an app
 
-    import ApplicationUpdates
+    import ShireworksKit
 
-    // At launch (application(_:didFinishLaunchingWithOptions:),
-    // applicationDidFinishLaunching(_:), or the App's init):
-    AppUpdates.start()
+    ContentView().shireworks()   // on the app's root view: starts it, once
+
+    // Or, in a process without SwiftUI views, at launch
+    // (applicationDidFinishLaunching(_:), a server's main):
+    ShireworksKit.start()        // crashes, and AppUpdates.start()
 
 `AppUpdates.start()` writes the app's build at launch (`UpdateChecker`, off
 the main actor), and decides whether Applications knows of a newer one
@@ -231,7 +233,11 @@ Each look asks at most once an offer: one being answered isn't asked again.
 
 `OfferResponder` is the app's side (portable, tested on Linux: its choice
 between the handler, the sheet and nothing is `OfferResponder.action`);
-`AppUpdates.start()` runs it on a Mac. iPhones and iPads don't answer
+`AppUpdates.start()` runs it on a Mac, started by ShireworksKit's
+`.shireworks()` on the app's root view (or `ShireworksKit.start()`). The
+sheet needs nothing more of the view: it is AppKit's, on whichever window is
+in front, so one modifier on the root is enough however many windows the
+app opens. iPhones and iPads don't answer
 offers: iOS lets nothing force an install.
 
 ## The app group
