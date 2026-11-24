@@ -196,5 +196,21 @@ struct CrashReportTests {
         #expect(other.signature != build1.signature)
         #expect(CrashSignature.steady("KERN_INVALID_ADDRESS at 0x0000000000000028") == "KERN_INVALID_ADDRESS at #")
     }
-}
 
+    /// A public repository's signature leaves the reason out (its issue
+    /// doesn't carry it): two reasons in the same image are one crash there,
+    /// and two with every symbol sign as a private repository's do.
+    @Test func withoutTheReasonTheReasonDecidesNothing() {
+        var first = Fixtures.report(type: "EXC_BREAKPOINT")
+        for index in first.frames.indices where first.frames[index].inApp { first.frames[index].symbol = nil }
+        var second = first
+        second.reason = "Example/List.swift:12: Fatal error: Unexpectedly found nil"
+        #expect(first.signature != second.signature)
+        #expect(first.signature(withReason: false) == second.signature(withReason: false))
+        #expect(first.signature(withReason: false) != first.signature)
+        #expect(first.signature(withReason: true) == first.signature)
+        #expect(Fixtures.report(type: "EXC_BAD_ACCESS").signature(withReason: false) != first.signature(withReason: false))
+        let symbols = Fixtures.report()
+        #expect(symbols.signature(withReason: false) == symbols.signature)
+    }
+}

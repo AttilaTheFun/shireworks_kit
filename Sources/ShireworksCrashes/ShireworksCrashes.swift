@@ -9,7 +9,8 @@
 // - CrashStore: the crashes not yet filed, a folder of JSON files;
 // - CrashFiler and CrashIssue: an issue opened, commented on or opened again,
 //   and what it says;
-// - CrashesConfiguration: where crashes are filed, and how many are kept.
+// - CrashesConfiguration: where crashes are filed, how many are kept, and
+//   whether a public repository's issues carry the reason and breadcrumbs.
 //
 // The crash recorder is an implementation detail: none of its types is in
 // the API, and it sends nothing anywhere.
@@ -62,7 +63,7 @@ public enum ShireworksCrashes {
             let client = GitHubIssuesClient(token: { try await signIn.access() }, send: send)
             filing = CrashFiling(
                 filer: CrashFiler(client: client, repository: repository, labels: configuration.labels,
-                                  redactions: configuration.redactions),
+                                  redactions: configuration.redactions, publicDetails: configuration.publicDetails),
                 store: store,
                 signedIn: { @MainActor in
                     signIn.reload()

@@ -1,7 +1,9 @@
 // Crashes filed against GitHub's answers as it writes them, with no
 // network: a new crash opens an issue with its markers and labels; one seen
 // before comments on its issue, opening a closed one again only for a
-// version newer than any it was seen in; a refused sign-in keeps them all.
+// version newer than any it was seen in; a refused sign-in keeps them all;
+// and a public repository's issues (or one whose visibility GitHub can't
+// say) leave out the reason and breadcrumbs, unless the host files them.
 
 import Foundation
 import GitHubAuth
@@ -22,12 +24,12 @@ import Testing
         /// "GET /search/issues", "POST /repos/owner/app/issues", ….
         var asks: [String] { requests.map { $0.method + " " + $0.url.path } }
 
-        func filer() -> CrashFiler {
+        func filer(publicDetails: Bool = false) -> CrashFiler {
             let client = GitHubIssuesClient(token: { "gho_fixture" }, send: { request in
                 self.asked.withLock { $0.append(request) }
                 return self.answer(request)
             })
-            return CrashFiler(client: client, repository: "owner/app")
+            return CrashFiler(client: client, repository: "owner/app", publicDetails: publicDetails)
         }
     }
 
@@ -56,11 +58,19 @@ import Testing
         CrashIssue.body(CrashIssue.body(for: report), recording: version)
     }
 
-    /// GitHub with `existing` as the search's answer, and the rest as asked.
-    private static func github(finding existing: [[String: Any]]) -> FakeGitHub {
+    /// The repository as GitHub answers for it: private or public.
+    private static func repository(private isPrivate: Bool) -> GitHubAnswer {
+        answer(200, ["id": 123_456_789, "full_name": "owner/app", "private": isPrivate] as [String: Any])
+    }
+
+    /// GitHub with `existing` as the search's answer, the repository as
+    /// `repository` (private by default), and the rest as asked.
+    private static func github(finding existing: [[String: Any]],
+                               repository: GitHubAnswer = repository(private: true)) -> FakeGitHub {
         let search = answer(200, found(existing))
         return FakeGitHub { request in
             switch (request.method, request.url.path) {
+            case ("GET", "/repos/owner/app"): repository
             case ("GET", "/search/issues"): search
             case ("POST", "/repos/owner/app/issues"): answer(201, issue(number: 9, body: body(request)["body"] as? String ?? ""))
             case ("POST", _): answer(201, comment)
@@ -74,8 +84,8 @@ import Testing
         let report = Fixtures.report()
         let github = Self.github(finding: [])
         #expect(try await github.filer().file(report) == .opened(9))
-        #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues"])
-        let search = try #require(github.requests.first?.url.query)
+        #expect(github.asks == ["GET /repos/owner/app", "GET /search/issues", "POST /repos/owner/app/issues"])
+        let search = try #require(github.requests[1].url.query)
         #expect(search.contains("q=repo%3Aowner%2Fapp%20is%3Aissue%20in%3Abody%20%22shireworks-crash%3A%20\(report.signature)%22"))
         let opened = Self.body(github.requests.last)
         #expect(opened["title"] as? String == CrashIssue.title(for: report))
@@ -95,7 +105,7 @@ import Testing
         let report = Fixtures.report()
         let github = Self.github(finding: [Self.issue(body: Self.issueBody(report, version: "1.2.0"))])
         #expect(try await github.filer().file(report) == .commented(7))
-        #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues/7/comments"])
+        #expect(github.asks == ["GET /repos/owner/app", "GET /search/issues", "POST /repos/owner/app/issues/7/comments"])
         let said = try #require(Self.body(github.requests.last)["body"] as? String)
         #expect(said.hasPrefix("Again in 1.2.0 (42), iPhone17,1, iOS 27.2, 2026-11-01T09:41:00Z"))
         #expect(said.contains("Example.List.item(at:)"))
@@ -108,7 +118,8 @@ import Testing
         let github = Self.github(finding: [Self.issue(number: 5, state: "closed", body: Self.issueBody(report, version: "1.0.0")),
                                            Self.issue(body: Self.issueBody(report, version: "1.2.0"))])
         #expect(try await github.filer().file(report) == .commented(7))
-        #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues/7/comments", "PATCH /repos/owner/app/issues/7"])
+        #expect(github.asks == ["GET /repos/owner/app", "GET /search/issues", "POST /repos/owner/app/issues/7/comments",
+                                "PATCH /repos/owner/app/issues/7"])
         let edit = Self.body(github.requests.last)
         #expect(edit["state"] == nil)
         #expect(CrashIssue.recordedVersion(in: edit["body"] as? String ?? "") == "1.3.0")
@@ -120,7 +131,8 @@ import Testing
         let report = Fixtures.report(version: "1.10.0")
         let github = Self.github(finding: [Self.issue(state: "closed", body: Self.issueBody(report, version: "1.9.3"))])
         #expect(try await github.filer().file(report) == .reopened(7))
-        #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues/7/comments", "PATCH /repos/owner/app/issues/7"])
+        #expect(github.asks == ["GET /repos/owner/app", "GET /search/issues", "POST /repos/owner/app/issues/7/comments",
+                                "PATCH /repos/owner/app/issues/7"])
         let edit = Self.body(github.requests.last)
         #expect(edit["state"] as? String == "open")
         #expect(CrashIssue.recordedVersion(in: edit["body"] as? String ?? "") == "1.10.0")
@@ -133,7 +145,7 @@ import Testing
             let report = Fixtures.report(version: crashed)
             let github = Self.github(finding: [Self.issue(state: "closed", body: Self.issueBody(report, version: recorded))])
             #expect(try await github.filer().file(report) == .commented(7))
-            #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues/7/comments"])
+            #expect(github.asks == ["GET /repos/owner/app", "GET /search/issues", "POST /repos/owner/app/issues/7/comments"])
         }
     }
 
@@ -145,8 +157,8 @@ import Testing
         let filer = github.filer()
         #expect(try await filer.file(report) == .opened(9))
         #expect(try await filer.file(Fixtures.report(id: "crash-2")) == .commented(9))
-        #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues", "GET /repos/owner/app/issues/9",
-                                "POST /repos/owner/app/issues/9/comments"])
+        #expect(github.asks == ["GET /repos/owner/app", "GET /search/issues", "POST /repos/owner/app/issues",
+                                "GET /repos/owner/app", "GET /repos/owner/app/issues/9", "POST /repos/owner/app/issues/9/comments"])
     }
 
     /// The store's crashes filed, oldest first, each let go once filed.
@@ -158,6 +170,95 @@ import Testing
         let outcomes = try await github.filer().fileStored(in: store)
         #expect(outcomes == [.opened(9), .opened(9)])
         #expect(store.reports().isEmpty)
+        // The repository asked of once, for the pass; an empty store asks nothing.
+        #expect(github.asks.filter { $0 == "GET /repos/owner/app" }.count == 1)
+        #expect(try await github.filer().fileStored(in: store).isEmpty)
+        #expect(github.asks.count == 5)
+    }
+
+    // MARK: Public repositories
+
+    /// A report whose reason and breadcrumbs carry what the user typed.
+    private static func personal() -> CrashReport {
+        var report = Fixtures.report()
+        report.reason = "Could not parse note \"meet at the cafe\""
+        report.breadcrumbs = ["typed into search: dinner plans"]
+        return report
+    }
+
+    /// What a filing sent: the new issue's title and body, or the comment.
+    private static func sent(_ github: FakeGitHub) -> [String] {
+        github.requests.filter { $0.method == "POST" }.flatMap { request in
+            let object = body(request)
+            return [object["title"] as? String, object["body"] as? String].compactMap { $0 }
+        }
+    }
+
+    @Test func aPrivateRepositoryGetsTheDetails() async throws {
+        let report = Self.personal()
+        let github = Self.github(finding: [])
+        #expect(try await github.filer().file(report) == .opened(9))
+        let sent = Self.sent(github).joined(separator: "\n")
+        #expect(sent.contains("meet at the cafe"))
+        #expect(sent.contains("dinner plans"))
+        #expect(!sent.contains(CrashIssue.reasonLeftOut))
+        #expect(sent.contains("<!-- shireworks-crash: \(report.signature) -->"))
+    }
+
+    /// Public: no reason or breadcrumbs in the title, the body or a comment;
+    /// the line that says the reason was left out, and the rest as ever.
+    @Test func aPublicRepositoryLeavesThemOut() async throws {
+        let report = Self.personal()
+        let github = Self.github(finding: [], repository: Self.repository(private: false))
+        let filer = github.filer()
+        #expect(try await filer.file(report) == .opened(9))
+        #expect(try await filer.file(report) == .commented(9))
+        let opened = Self.body(github.requests.first { $0.url.path == "/repos/owner/app/issues" })
+        #expect(opened["title"] as? String == "Crash: EXC_BAD_ACCESS (Example.List.item(at:))")
+        let body = try #require(opened["body"] as? String)
+        #expect(body.hasPrefix("**EXC_BAD_ACCESS**: (reason left out: public repository)\n\nCaught as: mach"))
+        #expect(body.contains("Example.List.item(at:) (Example + 0x1a2b)"))
+        #expect(body.contains("<details><summary>Binary images (2)</summary>"))
+        #expect(body.contains("| Device | iPhone17,1 |"))
+        #expect(!body.contains("Breadcrumbs"))
+        #expect(body.contains("<!-- shireworks-crash: \(report.signature(withReason: false)) -->"))
+        let sent = Self.sent(github)
+        #expect(sent.count == 3)
+        #expect(sent.allSatisfy { !$0.contains("cafe") && !$0.contains("dinner") })
+        #expect(sent.last?.hasPrefix("Again in 1.2.0 (42)") == true)
+    }
+
+    /// GitHub can't say (a refusal, an answer without `private`, no
+    /// network): public, to be safe. A refused sign-in still stops it.
+    @Test func anUnknownRepositoryCountsAsPublic() async throws {
+        struct Offline: Error {}
+        let unknown: [GitHubAnswer] = [Self.answer(404, ["message": "Not Found"]), Self.answer(500, ["message": "Server Error"]),
+                                       Self.answer(200, ["id": 1, "full_name": "owner/app"] as [String: Any])]
+        for repository in unknown {
+            let github = Self.github(finding: [], repository: repository)
+            #expect(try await github.filer().details() == false)
+            #expect(try await github.filer().file(Self.personal()) == .opened(9))
+            #expect(Self.sent(github).allSatisfy { !$0.contains("cafe") && !$0.contains("dinner") })
+            #expect(Self.sent(github).first?.hasPrefix("Crash: EXC_BAD_ACCESS (") == true)
+        }
+        let offline = GitHubIssuesClient(token: { "gho_fixture" }, send: { _ in throw Offline() })
+        #expect(try await CrashFiler(client: offline, repository: "owner/app").details() == false)
+        let refused = Self.github(finding: [], repository: Self.answer(401, ["message": "Bad credentials"]))
+        await #expect(throws: GitHubError(status: 401, message: "GitHub: Bad credentials")) {
+            try await refused.filer().details()
+        }
+    }
+
+    /// The host's opt-in: the details filed in a public repository too,
+    /// without asking GitHub.
+    @Test func publicDetailsFilesThem() async throws {
+        let report = Self.personal()
+        let github = Self.github(finding: [], repository: Self.repository(private: false))
+        #expect(try await github.filer(publicDetails: true).file(report) == .opened(9))
+        #expect(github.asks == ["GET /search/issues", "POST /repos/owner/app/issues"])
+        let sent = Self.sent(github).joined(separator: "\n")
+        #expect(sent.contains("meet at the cafe") && sent.contains("dinner plans"))
+        #expect(sent.contains("<!-- shireworks-crash: \(report.signature) -->"))
     }
 
     /// A refused sign-in stops the filing and keeps every crash.
@@ -215,5 +316,9 @@ import Testing
         #expect(CrashesConfiguration.from(info: nil) == CrashesConfiguration())
         #expect(CrashesConfiguration().labels == ["crash"])
         #expect(CrashesConfiguration().maxStored == 20)
+        #expect(!CrashesConfiguration().publicDetails)
+        #expect(CrashesConfiguration.from(info: ["ShireworksCrashesPublicDetails": true]).publicDetails)
+        #expect(!CrashesConfiguration.from(info: ["ShireworksCrashesPublicDetails": false]).publicDetails)
+        #expect(!CrashesConfiguration.from(info: ["ShireworksCrashesPublicDetails": "YES"]).publicDetails)
     }
 }

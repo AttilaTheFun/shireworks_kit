@@ -3,7 +3,7 @@ import GitHubAuth
 
 /// GitHub's issues, as the user: an issue opened, read, edited, closed,
 /// reopened or commented on, issues searched for, a comment edited or
-/// deleted, a repository's labels and conversations read, and an attachment
+/// deleted, a repository's labels, conversations and visibility read, and an attachment
 /// uploaded (`uploadAttachment`). A repository is named as GitHub writes
 /// it, "owner/name".
 ///
@@ -139,6 +139,28 @@ public final class GitHubIssuesClient: Sendable {
     @discardableResult
     public func createLabel(_ label: GitHubLabel, in repository: String) async throws -> GitHubLabel {
         try await sendEncoded("POST", "/repos/\(repository)/labels", label)
+    }
+
+    // MARK: Repositories
+
+    /// Whether GitHub says the repository is private (`GET /repos/{owner}/{name}`,
+    /// its `private`): false for a public one. Asked of GitHub each time (a
+    /// repository can change its visibility); its numeric id is remembered
+    /// on the way, for uploads (`repositoryID(of:)`). What GitHub refuses
+    /// is thrown, as is an answer without `private`.
+    public func isPrivate(repository: String) async throws -> Bool {
+        struct Repository: Decodable {
+            let id: Int64
+            let isPrivate: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case isPrivate = "private"
+            }
+        }
+        let found: Repository = try await get("/repos/\(repository)")
+        repositoryIDs.withLock { $0[repository.lowercased()] = found.id }
+        return found.isPrivate
     }
 
     // MARK: Requests
