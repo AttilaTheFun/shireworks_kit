@@ -1,0 +1,1 @@
+- Shireworks Kit 0.1.0: update_kit (0.19.0) and shake_kit (0.4.0) as one package, with both histories. Modules `ShakeKit`, `UpdateKit` and `UpdateKitInstall` are `ShireworksShake`, `ShireworksUpdates` and `ShireworksUpdatesInstall`, with the same API; `ShireworksKit` imports them all (but the installer's rules). Info.plist keys unchanged.

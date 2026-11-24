@@ -1,4 +1,0 @@
-/.ci/
-/.build/
-/bazel-*
-/.bazelrc.user

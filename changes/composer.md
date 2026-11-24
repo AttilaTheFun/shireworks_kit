@@ -1,1 +1,0 @@
-- IssueComposer: `NewIssueSheet` (title, description, attachments, an accessory slot for the host's own fields) and `IssueComposerModel`, which submits through the host's `upload` and `submit`; drafts kept by a `DraftStore` (a file by default).
