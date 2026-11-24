@@ -246,7 +246,15 @@ public actor AppGroupStore {
     /// one, or the app declined this build: the offer made, or nil. In one
     /// transaction that takes the write lock first, so of two Applications
     /// offering at once one makes it, and carries it out.
-    public func makeOffer(bundleID: String, version: String, build: String?, offeredBy: String) throws -> UpdateOffer? {
+    ///
+    /// `byPerson`: a person asked for it (Install or Update in Shireworks),
+    /// for an app whether or not its "Update automatically" is on (that
+    /// setting is the distributor's to read, not this call's). A person's
+    /// offer of the build already offered replaces that offer when it is
+    /// waiting, deferred, declined or failed, so the app asks again at once;
+    /// never one under way or installed.
+    public func makeOffer(bundleID: String, version: String, build: String?, offeredBy: String,
+                          byPerson: Bool = false) throws -> UpdateOffer? {
         let time = now()
         let offered = AppVersion(version, build: build)
         return try withConnection { connection in
@@ -255,15 +263,22 @@ public actor AppGroupStore {
                     // A settled offer of an older build is replaced; any other
                     // of an older build too, once that build is overtaken (a
                     // deferred one is offered again as the newer build).
-                    // One of this build or newer stands.
-                    guard existing.appVersion < offered else { return nil }
-                    guard [.offered, .deferred, .declined, .installed, .failed].contains(existing.state) else { return nil }
+                    // One of this build or newer stands, but for a person's
+                    // asking again for this build.
+                    if existing.appVersion < offered {
+                        guard [.offered, .deferred, .declined, .installed, .failed].contains(existing.state) else { return nil }
+                    } else {
+                        guard byPerson, existing.appVersion == offered,
+                              [.offered, .deferred, .declined, .failed].contains(existing.state) else { return nil }
+                    }
                 }
-                let offer = UpdateOffer(bundleID: bundleID, version: version, build: build, offeredBy: offeredBy, offeredAt: time)
+                let offer = UpdateOffer(bundleID: bundleID, version: version, build: build, offeredBy: offeredBy, offeredAt: time,
+                                        byPerson: byPerson)
                 try connection.run("""
-                    INSERT OR REPLACE INTO offers (bundle_id, version, build, state, note, bundle_path, offered_by, offered_at, updated_at)
-                    VALUES (?1, ?2, ?3, ?4, NULL, NULL, ?5, ?6, ?6)
-                    """, bundleID, version, build, offer.state.rawValue, offeredBy, time.timeIntervalSince1970)
+                    INSERT OR REPLACE INTO offers (bundle_id, version, build, state, note, bundle_path, offered_by, offered_at, updated_at,
+                        requested_by_person)
+                    VALUES (?1, ?2, ?3, ?4, NULL, NULL, ?5, ?6, ?6, ?7)
+                    """, bundleID, version, build, offer.state.rawValue, offeredBy, time.timeIntervalSince1970, byPerson ? 1 : 0)
                 return offer
             }
         }
@@ -337,7 +352,7 @@ public actor AppGroupStore {
     }
 
     private static let offerColumns =
-        "bundle_id, version, build, state, note, bundle_path, offered_by, offered_at, updated_at, bundle_sha256, bundle_name"
+        "bundle_id, version, build, state, note, bundle_path, offered_by, offered_at, updated_at, bundle_sha256, bundle_name, requested_by_person"
 
     private static func offer(_ bundleID: String, _ connection: Connection) throws -> UpdateOffer? {
         try connection.query("SELECT \(offerColumns) FROM offers WHERE bundle_id = ?1", bundleID, row: offer).first
@@ -348,7 +363,8 @@ public actor AppGroupStore {
                     state: UpdateOffer.State(rawValue: row.text(3) ?? "") ?? .offered, note: row.text(4),
                     bundle: row.text(5).map { URL(fileURLWithPath: $0) }, bundleSHA256: row.text(9), bundleName: row.text(10),
                     offeredBy: row.text(6) ?? "",
-                    offeredAt: Date(timeIntervalSince1970: row.double(7)), updatedAt: Date(timeIntervalSince1970: row.double(8)))
+                    offeredAt: Date(timeIntervalSince1970: row.double(7)), updatedAt: Date(timeIntervalSince1970: row.double(8)),
+                    byPerson: row.int(11) == 1)
     }
 
     private static func requests(_ connection: Connection) throws -> [InstallRequest] {

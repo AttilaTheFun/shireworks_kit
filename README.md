@@ -22,32 +22,46 @@ update_kit and shake_kit, whose histories it carries.
     import ShireworksKit
 
     @main struct ExampleApp: App {
-        init() { ShireworksKit.start() }   // crashes and updates, once, at launch
-
         var body: some Scene {
             WindowGroup {
                 ContentView()
-                    .shakeToReport(repository: "owner/app")
+                    .shireworks()   // crashes, updates, shake to report
             }
-            .commands { ShakeKitCommands() }   // Help › Report a Bug… (⌥⌘B)
+            .commands { ShakeKitCommands() }   // extra, on a Mac: Help › Report a Bug… (⌥⌘B)
         }
     }
 
-The last run's crash is filed at the next launch, as an issue in the app's
-repository (docs/crashes); a menu-bar app adds `ShakeKitReportWindow` and
-`ShakeKitReportButton` (docs/shake).
+`.shireworks()` on the root view is the whole adoption. At its first
+appearance it starts crashes and updates, once a process
+(`ShireworksKit.start()`); it puts shake to report on the view, filed in the
+Info.plist's `ShireworksRepository` (or `.shireworks(repository:)`'s); and on
+a Mac, Shireworks' offers of the app's newer build, heard through the app
+group (its signal, every five minutes, and as the app comes to the front),
+are answered with the update sheet: Update Now quits the app through its
+normal path and Shireworks installs the build and opens it again; Later asks
+again in an hour (docs/updates/Updates.md, "Updating automatically"). The
+last run's crash is filed at the next launch, as an issue in the app's
+repository (docs/crashes).
+
+Extras: on a Mac, `.commands { ShakeKitCommands() }` for Help › Report a
+Bug…; a menu-bar app adds `ShakeKitReportWindow` and `ShakeKitReportButton`
+(docs/shake). An app that must answer updates itself (work in progress, an
+install of its own) registers `AppUpdates.register(autoUpdate:)` (and
+`register(install:)`) before its root view appears: its answer is used in
+place of the sheet. A process without SwiftUI views (a headless server, an
+AppKit-only app) calls `ShireworksKit.start()` at launch instead.
 
 ## Adopting: what every app meets
 
 Every production build of an app the owner distributes through Shireworks:
 
-1. **Links Shireworks Kit** (`ShireworksKit`) and calls `ShireworksKit.start()`
-   at launch, in every process that runs the app's code (a headless server
-   process too, for its crashes), with `.shakeToReport(repository:)` on each
-   window and `ShakeKitCommands` on a Mac.
-2. **Records its build** in the shared app group: `ShireworksKit.start()`
-   does it (Updates), given the group key and entitlement below, so
-   Applications always knows the installed build (never "Unknown").
+1. **Links Shireworks Kit** (`ShireworksKit`) and puts `.shireworks()` on
+   the app's root view (each window's), with `ShakeKitCommands` on a Mac;
+   another process that runs the app's code without SwiftUI views (a
+   headless server, for its crashes) calls `ShireworksKit.start()` at launch.
+2. **Records its build** in the shared app group: `.shireworks()` does it
+   (Updates), given the group key and entitlement below, so Applications
+   always knows the installed build (never "Unknown").
 3. **Carries, stamped in by its CI** (never in its repository):
    - `GitHubSharedClientID`, `GitHubSharedKeychainGroup`,
      `GitHubSharedLockGroup`: the shared sign-in reports and crashes file with;
@@ -61,6 +75,15 @@ Every production build of an app the owner distributes through Shireworks:
 5. **Has a link scheme, its own name** (`<name>://`) in CFBundleURLTypes and
    its builds.json's `urlSchemes`, which Applications opens it by; on the
    iPhone and iPad, Shireworks lists the scheme to ask iOS about it.
+6. **On a Mac, lets Shireworks update it while it runs:** `.shireworks()`
+   answers Shireworks' offers of its newer build (automatic or a person's
+   Install or Update, alike). With no handler, the kit's update sheet asks,
+   on the app's front window: Update Now quits the app through its normal
+   path (`NSApplication.terminate`) and Shireworks installs the build and
+   opens it again; Later asks again in an hour. An app that must decide
+   itself (work in progress, an install of its own) registers
+   `AppUpdates.register(autoUpdate:)` before its root view appears
+   (docs/updates/Updates.md, "Updating automatically").
 
 ## From update_kit and shake_kit
 

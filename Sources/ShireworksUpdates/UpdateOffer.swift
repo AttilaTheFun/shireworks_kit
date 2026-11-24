@@ -1,9 +1,10 @@
 import Foundation
 
 /// Applications offering an app on a Mac its newest build, when the app's
-/// "Update automatically" is on (docs/Updates.md, "Updating automatically"):
-/// one offer a bundle id, in the shared database, which the app answers
-/// (`UpdateDecision`) and Applications carries out.
+/// "Update automatically" is on or a person asked for it (docs/Updates.md,
+/// "Updating automatically"): one offer a bundle id, in the shared
+/// database, which the app answers (`UpdateDecision`, or the update sheet's
+/// answer) and Applications carries out.
 public struct UpdateOffer: Sendable, Equatable {
     /// Where an offer is, from its making to its outcome.
     public enum State: String, Sendable, CaseIterable {
@@ -12,7 +13,8 @@ public struct UpdateOffer: Sendable, Equatable {
         case offered
         /// The app said go ahead: it asks Applications to install and quits.
         case goAhead
-        /// The app will say when (`AppUpdates.readyToUpdate()`).
+        /// The app will say when (`AppUpdates.readyToUpdate()`); or, after
+        /// the update sheet's Later, it asks again in an hour.
         case deferred
         /// The app won't take this version; the next newer one is offered.
         case declined
@@ -52,10 +54,15 @@ public struct UpdateOffer: Sendable, Equatable {
     /// carries it out.
     public var offeredBy: String
     public var offeredAt: Date
+    /// When it last moved: when the app answered Later, for a deferred one.
     public var updatedAt: Date
+    /// Whether a person asked for it (Install or Update in Shireworks),
+    /// rather than "Update automatically" making it.
+    public var byPerson: Bool
 
     public init(bundleID: String, version: String, build: String?, state: State = .offered, note: String? = nil, bundle: URL? = nil,
-                bundleSHA256: String? = nil, bundleName: String? = nil, offeredBy: String, offeredAt: Date, updatedAt: Date? = nil) {
+                bundleSHA256: String? = nil, bundleName: String? = nil, offeredBy: String, offeredAt: Date, updatedAt: Date? = nil,
+                byPerson: Bool = false) {
         self.bundleID = bundleID
         self.version = version
         self.build = build
@@ -67,19 +74,22 @@ public struct UpdateOffer: Sendable, Equatable {
         self.offeredBy = offeredBy
         self.offeredAt = offeredAt
         self.updatedAt = updatedAt ?? offeredAt
+        self.byPerson = byPerson
     }
 
     public var appVersion: AppVersion { AppVersion(version, build: build) }
 }
 
 /// An app's answer to an offer, from its handler
-/// (`AppUpdates.register(autoUpdate:)`).
+/// (`AppUpdates.register(autoUpdate:)`); without one, the update sheet's.
 public enum UpdateDecision: Sendable, Equatable {
-    /// The default: the app asks Applications to install it and quits at
-    /// once; Applications puts the build in place and opens it again.
+    /// The app asks Applications to install it and quits; Applications
+    /// puts the build in place and opens it again. The update sheet's
+    /// Update Now.
     case goAhead
     /// Not now: nothing happens until the app calls
     /// `AppUpdates.readyToUpdate()` (when the user agrees, or work is done).
+    /// The update sheet's Later, which asks again in an hour.
     case deferUntilReady
     /// Not this version, saying why if it likes; the next newer one is
     /// offered.
@@ -113,3 +123,13 @@ public typealias AutoUpdateHandler = @MainActor @Sendable (UpdateOffer) async ->
 /// the offer once its `bundle` is ready (or at the next launch, for an app
 /// that was not running), to install when it suits.
 public typealias AutoUpdateInstaller = @MainActor @Sendable (UpdateOffer) async -> Void
+
+/// The update sheet's answer: what the app shows when an offer comes and it
+/// registered no handler (`AppUpdates.register(autoUpdate:)`).
+public enum UpdateSheetAnswer: Sendable, Equatable {
+    /// Update Now: go ahead, the app quits as Quit in its menu would.
+    case updateNow
+    /// Later: deferred, and asked again in an hour, or at once for a newer
+    /// build or a person's asking again.
+    case later
+}

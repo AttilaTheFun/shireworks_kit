@@ -20,20 +20,21 @@ final class AutoUpdateTests: XCTestCase {
     }
 
     private func responder(_ store: AppGroupStore, running version: String = "0.39.2", system: FakeSystem,
-                           handler: AutoUpdateHandler? = nil, installHook: AutoUpdateInstaller? = nil) -> OfferResponder {
+                           handler: AutoUpdateHandler? = nil, installHook: AutoUpdateInstaller? = nil,
+                           now: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_000) }) -> OfferResponder {
         let app = InstalledApp(bundleID: visor, version: version, build: "1")
         let installer = UpdateInstaller(store: store, system: system, platform: .macOS, handler: nil, requester: visor,
                                         now: { Date(timeIntervalSince1970: 50) })
         return OfferResponder(store: store, app: app, installer: installer, system: system, handler: handler, installHook: installHook,
-                              installsFromZip: false)
+                              installsFromZip: false, now: now)
     }
 
     // MARK: The database
 
-    func testTheDatabaseMovesToItsFourthMigration() async throws {
+    func testTheDatabaseMovesToItsFifthMigration() async throws {
         _ = try await store().records()
         let database = try Database(path: temporary.file.path)
-        XCTAssertEqual(try database.query("PRAGMA user_version") { $0.int(0) }, [4])
+        XCTAssertEqual(try database.query("PRAGMA user_version") { $0.int(0) }, [5])
     }
 
     func testAnAppSaysItTakesItsBuildAsItsZip() async throws {
@@ -58,7 +59,7 @@ final class AutoUpdateTests: XCTestCase {
         XCTAssertTrue(fromZip)
     }
 
-    func testADatabaseAtTheThirdMigrationKeepsItsOffersThroughTheFourth() async throws {
+    func testADatabaseAtTheThirdMigrationKeepsItsOffersThroughTheFifth() async throws {
         // A database the third migration left, with an app and an offer in it.
         try FileManager.default.createDirectory(at: temporary.file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let database = try Database(path: temporary.file.path)
@@ -81,7 +82,8 @@ final class AutoUpdateTests: XCTestCase {
         XCTAssertTrue(answers)
         let fromZip = try await store.installsFromZip(bundleID: visor)
         XCTAssertFalse(fromZip)
-        XCTAssertEqual(try Database(path: temporary.file.path).query("PRAGMA user_version") { $0.int(0) }, [4])
+        XCTAssertEqual(offer?.byPerson, false, "an offer from before migration 5 was no person's")
+        XCTAssertEqual(try Database(path: temporary.file.path).query("PRAGMA user_version") { $0.int(0) }, [5])
     }
 
     func testAZipHandedOverCarriesItsSHA256AndName() async throws {
@@ -179,9 +181,9 @@ final class AutoUpdateTests: XCTestCase {
 
     // MARK: The app's answer
 
-    /// No handler: go ahead, at once (the owner, 2026-11-11): Applications
-    /// asked through the database, and the app quits.
-    func testWithoutAHandlerTheAppGoesAheadAndQuits() async throws {
+    /// No handler: the update sheet asks; Update Now goes ahead:
+    /// Applications asked through the database, and the app quits.
+    func testWithoutAHandlerTheSheetAsksAndUpdateNowQuits() async throws {
         let store = store(), system = FakeSystem()
         _ = try await store.makeOffer(bundleID: visor, version: "0.40.1", build: "1", offeredBy: "com.example.Applications")
         try await responder(store, system: system).launched()
@@ -190,7 +192,7 @@ final class AutoUpdateTests: XCTestCase {
         let requests = try await store.installRequests()
         XCTAssertEqual(requests.map(\.version), ["0.40.1"])
         let events = await system.events
-        XCTAssertEqual(events, ["changed", "changed", "open Applications", "terminate"])
+        XCTAssertEqual(events, ["sheet 0.40.1", "changed", "changed", "open Applications", "terminate"])
         let answers = try await store.answersOffers(bundleID: visor)
         XCTAssertTrue(answers)
     }
