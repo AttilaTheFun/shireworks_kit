@@ -220,6 +220,32 @@ import Testing
         #expect(github.requests.count == 2)
     }
 
+    // MARK: Search
+
+    /// A search: the query escaped whole into `q`, a hundred a page, the
+    /// issues read from its `items`; a full page asks for the next.
+    @Test func issuesSearchedFor() async throws {
+        let full = #"{"total_count": 101, "incomplete_results": false, "items": ["# + Array(repeating: Self.issue(), count: 100).joined(separator: ", ") + "]}"
+        let github = FakeGitHub { request in
+            Self.answer(request.url.query?.hasSuffix("&page=1") == true ? full
+                : #"{"total_count": 101, "incomplete_results": false, "items": [\#(Self.issue(state: "closed"))]}"#)
+        }
+        let found = try await github.client().searchIssues(#"repo:owner/app is:issue in:body "shireworks-crash: 0f1e""#, pages: 3)
+        #expect(found.count == 101)
+        #expect(found.last?.state == "closed")
+        #expect(github.requests.map(\.method) == ["GET", "GET"])
+        #expect(github.requests.first?.url.absoluteString
+            == "https://api.github.com/search/issues?q=repo%3Aowner%2Fapp%20is%3Aissue%20in%3Abody%20%22shireworks-crash%3A%200f1e%22&per_page=100&page=1")
+    }
+
+    /// What goes in an issue is redacted the same way everywhere: tokens,
+    /// email addresses, a URL's query, and the host's own patterns.
+    @Test func redactedForAnIssue() {
+        let line = "sent ghp_abcdefghij0123456789 for someone@example.com to https://api.example.com/x?key=secret, user 12345"
+        let redacted = IssueRedaction.redacted(line, extra: [#"user \d+"#])
+        #expect(redacted == "sent <redacted> for <redacted> to https://api.example.com/x?<redacted> <redacted>")
+    }
+
     // MARK: Attachments
 
     private static let repository = #"{"id": 123456789, "node_id": "R_kgDOexample", "full_name": "owner/app", "private": false}"#
