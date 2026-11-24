@@ -21,26 +21,46 @@ update_kit and shake_kit, whose histories it carries.
 
     import ShireworksKit
 
-    WindowGroup {
-        ContentView()
-            .shakeToReport(repository: "owner/app")
+    @main struct ExampleApp: App {
+        init() { ShireworksKit.start() }   // crashes and updates, once, at launch
+
+        var body: some Scene {
+            WindowGroup {
+                ContentView()
+                    .shakeToReport(repository: "owner/app")
+            }
+            .commands { ShakeKitCommands() }   // Help › Report a Bug… (⌥⌘B)
+        }
     }
-    .commands { ShakeKitCommands() }   // Help › Report a Bug… (⌥⌘B)
 
-An app is configured by its Info.plist, which the distributor's CI stamps
-in: the shared sign-in's keys (`GitHubSharedClientID`,
-`GitHubSharedKeychainGroup`, `GitHubSharedLockGroup`), Updates' app group
-and bundle ids (`UpdateKitAppGroup`, `UpdateKitApplicationsBundleIDs`,
-`UpdateKitReleasesRepository`), Shake's scope (`ShakeKitScope`) and the
-repository crashes are filed in (`ShireworksRepository`). Without them a
-capability does nothing.
+The last run's crash is filed at the next launch, as an issue in the app's
+repository (docs/crashes); a menu-bar app adds `ShakeKitReportWindow` and
+`ShakeKitReportButton` (docs/shake).
 
-## Crashes
+## Adopting: what every app meets
 
-Started once, at launch; the last run's crash is filed at the next, as an
-issue in the app's repository (docs/crashes):
+Every production build of an app the owner distributes through Shireworks:
 
-    ShireworksCrashes.start()
+1. **Links Shireworks Kit** (`ShireworksKit`) and calls `ShireworksKit.start()`
+   at launch, in every process that runs the app's code (a headless server
+   process too, for its crashes), with `.shakeToReport(repository:)` on each
+   window and `ShakeKitCommands` on a Mac.
+2. **Records its build** in the shared app group: `ShireworksKit.start()`
+   does it (Updates), given the group key and entitlement below, so
+   Applications always knows the installed build (never "Unknown").
+3. **Carries, stamped in by its CI** (never in its repository):
+   - `GitHubSharedClientID`, `GitHubSharedKeychainGroup`,
+     `GitHubSharedLockGroup`: the shared sign-in reports and crashes file with;
+   - `ShakeKitScope` (`repo` for a private repository);
+   - `ShireworksRepository`: `owner/name`, where crashes are filed;
+   - `UpdateKitAppGroup` and, on a Mac, `UpdateKitApplicationsBundleIDs`;
+   - `BuildVariant`: `Production`, `Alpha`, `Beta` or `AdHoc`.
+4. **Is entitled** to the app group (application-groups) and the shared
+   sign-in's keychain group (keychain-access-groups), granted by its
+   profiles.
+5. **Has a link scheme, its own name** (`<name>://`) in CFBundleURLTypes and
+   its builds.json's `urlSchemes`, which Applications opens it by; on the
+   iPhone and iPad, Shireworks lists the scheme to ask iOS about it.
 
 ## From update_kit and shake_kit
 

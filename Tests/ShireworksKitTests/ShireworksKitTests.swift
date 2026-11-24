@@ -11,4 +11,11 @@ struct ShireworksKitTests {
         _ = ShakeKitConfiguration.self
         _ = CrashReport.self
     }
+
+    /// The one call at launch is there, with crashes' and updates' settings (not run: it would install the crash
+    /// recorder in the test runner).
+    @MainActor @Test func oneCallStartsThem() {
+        let start: @MainActor (CrashesConfiguration, String?) -> Void = ShireworksKit.start(crashes:appGroup:)
+        _ = start
+    }
 }
