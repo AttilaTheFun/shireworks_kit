@@ -1,17 +1,18 @@
 // ShireworksCrashes: the app's crashes, caught on the device and filed as
 // GitHub issues, one issue a crash (docs/crashes):
 //
-// - ShireworksCrashes: started once at launch, it catches the app's crashes
-//   (Platform: Sentry's SDK on Apple's systems, used on the device alone),
-//   keeps each one in a CrashStore, and files them with the shared sign-in;
-// - CrashReport: one crash, and its signature (CrashSignature);
+// - ShireworksCrashes: started once at launch, it records the app's crashes
+//   (Platform: KSCrash on Apple's systems, on the device alone), keeps each
+//   one in a CrashStore, and files them with the shared sign-in;
+// - CrashReport: one crash, and its signature (CrashSignature); read from
+//   the recorder's report by CrashRecording;
 // - CrashStore: the crashes not yet filed, a folder of JSON files;
 // - CrashFiler and CrashIssue: an issue opened, commented on or opened again,
 //   and what it says;
 // - CrashesConfiguration: where crashes are filed, and how many are kept.
 //
-// The crash reporter is an implementation detail: none of its types is in
-// the API, and nothing reaches its service.
+// The crash recorder is an implementation detail: none of its types is in
+// the API, and it sends nothing anywhere.
 import Foundation
 import GitHubAuth
 import GitHubIssues
@@ -21,8 +22,8 @@ import GitHubIssues
 ///
 ///     ShireworksCrashes.start()
 ///
-/// A crash is caught as it happens, and handed over at the next launch:
-/// kept in the store (`CrashStore.standard()`, at most `maxStored`, for at
+/// A crash is recorded as it happens, and handed over at the next launch,
+/// as `start` starts the recorder: kept in the store (`CrashStore.standard()`, at most `maxStored`, for at
 /// most `maxAge`), then filed in a background task (`CrashFiler`) with the
 /// sign-in the host's apps share (`GitHubSharedSignIn`). Crashes has no
 /// sign-in of its own: on a device with nobody signed in to that, nothing is
@@ -55,7 +56,6 @@ public enum ShireworksCrashes {
         send: @escaping GitHubTransport.Send = GitHubTransport.network
     ) -> Bool {
         guard !isStarted, Platform.isSupported else { return isStarted }
-        store.prune(maxCount: configuration.maxStored, maxAge: configuration.maxAge)
 
         if configuration.files, let repository = configuration.repository, let signIn = Platform.sharedSignIn(shared) {
             credentials = signIn
@@ -71,15 +71,15 @@ public enum ShireworksCrashes {
                 refused: { @MainActor in signIn.refused() })
         }
 
-        let filing = filing
+        let executable = Platform.executableName
         let name = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
-        isStarted = Platform.startCrashReporter(cache: Platform.cacheFolder(name: name)) { event in
-            guard let report = CrashEvent.report(from: event) else { return }
-            try? store.add(report)
-            store.prune(maxCount: configuration.maxStored, maxAge: configuration.maxAge)
-            filing?.file()
+        // The runs' before: each crash kept (and let go by the recorder), or
+        // left with the recorder where it can't be kept now.
+        isStarted = Platform.startCrashRecorder(folder: Platform.recorderFolder(name: name)) { record in
+            guard let report = CrashRecording.report(from: record, executable: executable) else { return true }
+            return (try? store.add(report)) != nil
         }
-        // What was kept before, and the last run's crash once it's handed over.
+        store.prune(maxCount: configuration.maxStored, maxAge: configuration.maxAge)
         filing?.file()
         return isStarted
     }

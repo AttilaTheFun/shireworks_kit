@@ -1,4 +1,4 @@
-// A crash as the crash reporter hands it over, read into a CrashReport on
+// A crash as the crash recorder hands it over, read into a CrashReport on
 // every platform; and its signature: the same crash's the same, whatever
 // changes from run to run, the app's own frames deciding where it has any.
 
@@ -7,72 +7,125 @@ import Testing
 @testable import ShireworksCrashes
 
 struct CrashReportTests {
-    @Test func readFromTheEvent() throws {
-        let report = try #require(CrashEvent.report(from: Fixtures.event()))
-        #expect(report.id == "7d1b8e2c4f6a4b0e9c3d5a7f1e2b4c6d")
-        #expect(report.date == Date(timeIntervalSince1970: 1_793_526_060.25))
+    @Test func readFromTheRecord() throws {
+        let report = try #require(CrashRecording.report(from: Fixtures.record()))
+        #expect(report.id == "84F501DB-DE74-4B02-817D-343BAB6B2E6E")
+        #expect(abs(report.date.timeIntervalSince1970 - 1_795_544_825.779506) < 0.000_01)
         #expect(report.appVersion == "1.2.0")
         #expect(report.appBuild == "42")
-        #expect(report.system == "macOS 27.2 (27C5000)")
-        #expect(report.deviceModel == "Mac16,10")
+        #expect(report.system == "macOS 27.0.1 (26A434)")
+        #expect(report.deviceModel == "VirtualMac2,1")
         #expect(report.exceptionType == "EXC_BREAKPOINT")
-        #expect(report.reason.hasSuffix("Fatal error: Index out of range in /Users/someone/Example/Sources/List.swift"))
+        // The Swift runtime's message, beside libswiftCore's image.
+        #expect(report.reason == "Swift/ContiguousArrayBuffer.swift:695: Fatal error: Index out of range\n")
         #expect(report.mechanism == "mach")
+        #expect(report.breadcrumbs == nil)
 
-        // Innermost first; images by name alone, never their paths.
-        #expect(report.frames.map(\.imageName) == ["libswiftCore.dylib", "Example", "Example", "dyld"])
-        #expect(report.frames.map(\.inApp) == [false, true, true, false])
-        let own = report.frames[1]
-        #expect(own.symbol == nil)
-        #expect(own.instructionAddress == 0x1_0000_1a2b)
-        #expect(own.imageAddress == 0x1_0000_0000)
-        #expect(own.offset == 0x1a2b)
-        #expect(own.imageUUID == "8a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
-        #expect(own.location == "Example + 0x1a2b")
-        #expect(report.frames[2].location == "main")
+        // Innermost first, as the recorder writes them; the app's own: its
+        // executable's (the report's CFBundleExecutable).
+        #expect(report.frames.map(\.imageName) == ["libswiftCore.dylib", "libswiftCore.dylib", "libswiftCore.dylib",
+                                                   "libswiftCore.dylib", "Example", "dyld"])
+        #expect(report.frames.map(\.inApp) == [false, false, false, false, true, false])
+        let own = report.frames[4]
+        #expect(own == CrashReport.Frame(imageName: "Example", imageUUID: "1C2B3187-191D-3AA4-A387-77B4336C4EF9",
+                                         instructionAddress: 4_369_489_296, imageAddress: 4_369_481_728, symbol: "main", inApp: true))
+        #expect(own.offset == 0x1d90)
+        #expect(own.location == "main")
+        #expect(report.frames[3].symbolName == "$sSayxSicig")
 
-        // A thread with no frame read (its one at 0) is left out.
-        #expect(report.threads == [CrashReport.Thread(id: 1, frames: [
-            .init(imageName: "libsystem_kernel.dylib", imageUUID: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
-                  instructionAddress: 0x1_8a00_1000, imageAddress: 0x1_8a00_0000, symbol: "__workq_kernreturn"),
-            .init(imageName: "libsystem_pthread.dylib", instructionAddress: 0x1_8b00_1234, imageAddress: 0x1_8b00_0000,
-                  symbol: "start_wqthread"),
-        ])])
-        #expect(report.images.map(\.name) == ["Example", "libswiftCore.dylib", "dyld", "libsystem_kernel.dylib"])
-        #expect(report.images.first == CrashReport.Image(name: "Example", uuid: "8a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
-                                                         address: 0x1_0000_0000, size: 65536))
-        #expect(report.breadcrumbs == ["09:40:58 [started] Breadcrumb Tracking", "09:40:59 [app.lifecycle] (state: foreground)"])
-    }
-
-    /// Only a crash is a report: anything else the reporter would send isn't.
-    @Test func onlyACrash() throws {
-        var event = try Fixtures.event()
-        event["level"] = "error"
-        #expect(CrashEvent.report(from: event) == nil)
-        event["level"] = "fatal"
-        event["exception"] = nil
-        #expect(CrashEvent.report(from: event) == nil)
-    }
-
-    /// Without the app's context, its version and build from the release;
-    /// the crashing thread from the thread marked crashed, or else the
-    /// exception's.
-    @Test func whatTheEventLeavesOut() throws {
-        var event = try Fixtures.event()
-        event["contexts"] = nil
-        event["dist"] = nil
-        var threads = try #require(event["threads"] as? [String: Any])
-        var values = try #require(threads["values"] as? [[String: Any]])
-        values[0]["crashed"] = nil
-        threads["values"] = values
-        event["threads"] = threads
-        let report = try #require(CrashEvent.report(from: event))
-        #expect(report.appVersion == "1.2.0")
-        #expect(report.appBuild == "42")
-        #expect(report.system == "unknown")
-        #expect(report.deviceModel == "unknown")
-        #expect(report.frames.count == 4)
+        // A thread with no frame (the recorder's) is left out.
+        let other = try #require(report.threads?.first)
         #expect(report.threads?.count == 1)
+        #expect(other.id == 1)
+        #expect(other.frames.map(\.location) == ["__semwait_signal", "nanosleep", "sleep", "monitorThreadCache", "_pthread_start",
+                                                 "thread_start"])
+        #expect(other.frames[3].inApp)
+        // Images by their file name alone, never their path.
+        #expect(report.images.map(\.name) == ["Example", "libsystem_c.dylib", "libsystem_kernel.dylib", "libsystem_pthread.dylib",
+                                              "libswiftCore.dylib", "dyld"])
+        #expect(report.images.first == CrashReport.Image(name: "Example", uuid: "1C2B3187-191D-3AA4-A387-77B4336C4EF9",
+                                                         address: 4_369_481_728, size: 409_600))
+        #expect(report.topFrames.map(\.location) == ["main"])
+    }
+
+    /// Only a crash is a report: not a clean exit, nor one marked not fatal,
+    /// nor a report with no crash in it.
+    @Test func onlyACrash() throws {
+        for (key, value) in [("is_fatal", false), ("is_clean_exit", true)] {
+            var record = try Fixtures.record()
+            var crash = try #require(record["crash"] as? [String: Any])
+            var error = try #require(crash["error"] as? [String: Any])
+            error[key] = value
+            crash["error"] = error
+            record["crash"] = crash
+            #expect(CrashRecording.report(from: record) == nil)
+        }
+        var record = try Fixtures.record()
+        record["crash"] = nil
+        #expect(CrashRecording.report(from: record) == nil)
+    }
+
+    /// An NSException's and a C++ exception's name and reason; a bad
+    /// access's signal, code and address where nothing says more.
+    @Test func howItWasCaught() throws {
+        func report(_ error: [String: Any]) throws -> CrashReport {
+            var record = try Fixtures.record()
+            var crash = try #require(record["crash"] as? [String: Any])
+            crash["error"] = error
+            record["crash"] = crash
+            record["binary_images"] = nil
+            return try #require(CrashRecording.report(from: record))
+        }
+        let exception = try report(["type": "nsexception", "reason": "*** -[__NSArrayM objectAtIndex:]: index 5 beyond bounds [0 .. 2]",
+                                    "nsexception": ["name": "NSRangeException"]])
+        #expect(exception.exceptionType == "NSRangeException")
+        #expect(exception.reason == "*** -[__NSArrayM objectAtIndex:]: index 5 beyond bounds [0 .. 2]")
+        #expect(exception.mechanism == "nsexception")
+
+        let cpp = try report(["type": "cpp_exception", "reason": "vector", "cpp_exception": ["name": "std::out_of_range"]])
+        #expect(cpp.exceptionType == "std::out_of_range")
+        #expect(cpp.reason == "vector")
+        #expect(cpp.mechanism == "cpp_exception")
+
+        let access = try report(["type": "mach", "address": 16,
+                                 "mach": ["exception_name": "EXC_BAD_ACCESS", "code_name": "KERN_INVALID_ADDRESS"],
+                                 "signal": ["name": "SIGSEGV"]])
+        #expect(access.exceptionType == "EXC_BAD_ACCESS")
+        #expect(access.reason == "SIGSEGV, KERN_INVALID_ADDRESS at 0x10")
+
+        let signal = try report(["type": "signal", "signal": ["name": "SIGABRT"]])
+        #expect(signal.exceptionType == "SIGABRT")
+        #expect(signal.reason == "SIGABRT")
+        #expect(signal.mechanism == "signal")
+    }
+
+    /// Without the executable's name in the report, the one given (the
+    /// running app's) decides which frames are the app's own; without the
+    /// app's version, it's unknown.
+    @Test func whatTheRecordLeavesOut() throws {
+        var record = try Fixtures.record()
+        var system = try #require(record["system"] as? [String: Any])
+        for key in ["CFBundleExecutable", "CFBundleShortVersionString", "CFBundleVersion", "machine", "system_name", "system_version"] {
+            system[key] = nil
+        }
+        system["build_type"] = "simulator"
+        record["system"] = system
+        let given = try #require(CrashRecording.report(from: record, executable: "libswiftCore.dylib"))
+        #expect(given.frames.map(\.inApp) == [true, true, true, true, false, false])
+        #expect(given.appVersion == "")
+        #expect(given.appBuild == "")
+        #expect(given.system == "unknown")
+        #expect(given.deviceModel == "unknown (Simulator)")
+        // Else the process' name.
+        let named = try #require(CrashRecording.report(from: record))
+        #expect(named.frames.map(\.inApp) == [false, false, false, false, true, false])
+    }
+
+    @Test func timesAsTheRecorderWritesThem() {
+        #expect(CrashRecording.date("2026-11-24T18:27:05Z") == Date(timeIntervalSince1970: 1_795_544_825))
+        #expect(CrashRecording.date("2026-11-24T18:27:05.5Z") == Date(timeIntervalSince1970: 1_795_544_825.5))
+        #expect(CrashRecording.date(1_795_544_825) == Date(timeIntervalSince1970: 1_795_544_825))
+        #expect(CrashRecording.date("not a time") == nil)
     }
 
     @Test func keptAsJSON() throws {

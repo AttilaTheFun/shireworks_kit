@@ -9,8 +9,8 @@
 // - ShireworksUpdates: record the build the app is and hear of its updates
 //   (update_kit's UpdateKit); ShireworksUpdatesInstall, the Mac installer
 //   service's rules.
-// - ShireworksCrashes: the app's crashes, filed as GitHub issues (Sentry's
-//   SDK catches them on Apple's systems, used on the device alone).
+// - ShireworksCrashes: the app's crashes, filed as GitHub issues (KSCrash
+//   records them on Apple's systems, on the device alone).
 // - GitHubAuth, GitHubIssues and IssueComposer: the shared sign-in, the
 //   issues client and the composer the capabilities file with.
 // - ShireworksKit: all of them, in one import.
@@ -39,9 +39,9 @@ let package = Package(
     dependencies: [
         // A range, not one version: the apps pin swift_sql themselves, and their pin is the one taken.
         .package(url: "https://github.com/AttilaTheFun/swift_sql.git", from: "0.35.0"),
-        // Crashes' crash reporter on Apple's systems, built from source (SentrySPM), one version: an implementation
-        // detail, none of its types in the API (docs/crashes).
-        .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.35.0"),
+        // Crashes' crash recorder on Apple's systems, built from source, one version: an implementation detail, none
+        // of its types in the API (docs/crashes).
+        .package(url: "https://github.com/kstenerud/KSCrash.git", exact: "2.6.1"),
     ],
     targets: [
         .target(name: "ShireworksKit", dependencies: ["ShireworksShake", "ShireworksUpdates", "ShireworksCrashes", "GitHubAuth", "GitHubIssues",
@@ -54,7 +54,7 @@ let package = Package(
         .target(name: "ShireworksUpdatesInstall"),
         .target(name: "ShireworksCrashes", dependencies: [
             "GitHubAuth", "GitHubIssues",
-            .product(name: "SentrySPM", package: "sentry-cocoa", condition: .when(platforms: [.iOS, .macOS])),
+            .product(name: "Recording", package: "KSCrash", condition: .when(platforms: [.iOS, .macOS])),
         ]),
         .testTarget(name: "ShireworksKitTests", dependencies: ["ShireworksKit"]),
         .testTarget(name: "GitHubAuthTests", dependencies: ["GitHubAuth"]),

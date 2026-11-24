@@ -17,40 +17,41 @@ and entitlements.
 
 ## How it works
 
-1. **Caught.** On iOS and macOS a crash reporter catches the crash as it
-   happens and writes it down; the process ends as it would have.
-2. **Handed over.** At the next launch, `start` starts the reporter again,
-   which reads the last run's crash and hands it over. Crashes reads it into
-   a `CrashReport`: the app's version and build, the system and the device
-   model, the exception (its type, its reason, how it was caught), the
-   crashing thread's frames, the other threads, the binary images loaded,
-   and the breadcrumbs left before it.
+1. **Recorded.** On iOS and macOS a crash recorder catches the crash as it
+   happens and writes it down, a JSON report in the app's caches; the
+   process ends as it would have.
+2. **Handed over.** At the next launch, `start` starts the recorder again
+   and reads every report it kept (`CrashRecording`) into a `CrashReport`:
+   the app's version and build, the system and the device model, the
+   exception (its type, its reason, how it was caught), the crashing
+   thread's frames, the other threads, and the binary images the frames
+   are in. Each one kept is deleted from the recorder's own store.
 3. **Kept.** The report goes into the app's `CrashStore`, a folder of JSON
    files (`Application Support/ShireworksCrashes/<bundle id>`): at most the
    newest 20 (`maxStored`), for at most 30 days (`maxAge`).
 4. **Filed.** In a background task, each kept report is filed with the
    shared sign-in (`CrashFiler`) and, once filed, let go.
 
-## The crash reporter: Sentry's SDK, on the device alone
+## The crash recorder: KSCrash, on the device alone
 
-The reporter is [sentry-cocoa](https://github.com/getsentry/sentry-cocoa)
-(9.35.0, built from source, `SentrySPM`), an implementation detail: none
-of its types is in the API, and all of it is in one file
-(`Sources/ShireworksCrashes/Platform.swift`). There is no Sentry account and
-no Sentry project:
+The recorder is [KSCrash](https://github.com/kstenerud/KSCrash) (2.6.1,
+MIT, its `Recording` library built from source; what Sentry's own Apple SDK
+records crashes with), an implementation detail: none of its types is in
+the API, and all of it is in one file
+(`Sources/ShireworksCrashes/Platform.swift`). It has no service and sends
+nothing anywhere; there is no account of any kind.
 
-- It is started with a DSN that names no project, at a host that doesn't
-  exist (`o0.ingest.invalid`).
-- Its `beforeSend` drops every event, a crash's (level `fatal`) handed to
-  Crashes first: nothing is ever sent.
-- Everything but its crash handler is off: app hang and watchdog
-  termination tracking, sessions, tracing and performance, network, file
-  and Core Data tracking, failed requests, swizzling, MetricKit, metrics,
-  logs, client reports, screenshots, view hierarchies and session replay;
-  `sendDefaultPii` is false.
+- Its monitors are the crash ones only: Mach exceptions, signals, C++
+  exceptions and uncaught NSExceptions. No hang, watchdog, main-thread
+  deadlock, zombie or memory-termination monitors, no hang or CPU reports.
+  (KSCrash always adds its few required ones, the system's and the app's
+  state, which write no report of their own.)
+- No memory introspection, no console log, no queue names in a report, and
+  no rebinding of `__cxa_throw`.
+- A report names only the binary images its frames are in.
 - Its files are in the app's caches (`Caches/ShireworksCrashes/<bundle id>`).
 
-Elsewhere (Linux, Isomer's hosts) there is no reporter for now: `start`
+Elsewhere (Linux, Isomer's hosts) there is no recorder for now: `start`
 does nothing and says so (false). The rest (the report, the store, the
 filer) is the same everywhere, and tested on Linux and on a Mac.
 
@@ -82,8 +83,9 @@ little.
 - **None:** an issue opens, titled
   `Crash: <type>: <short reason> (<top frame of the app's>)`, labelled
   `crash`, with the summary, the crashing thread in a code block, the app
-  and device in a table, the other threads, binary images and breadcrumbs
-  folded in `<details>`, and the markers. It is kept under 60,000 bytes
+  and device in a table, the other threads and binary images (and
+  breadcrumbs, where a report has any; KSCrash's have none) folded in
+  `<details>`, and the markers. It is kept under 60,000 bytes
   (GitHub takes 65,536 characters): the folded parts are cut first, the
   largest first, then the crashing thread's outermost frames.
 - **Open:** a comment, "Again in <version> (<build>), <device>, <system>,
@@ -101,10 +103,11 @@ Before anything is filed it is redacted: GitHubIssues' `IssueRedaction`
 (tokens, email addresses, a URL's query), the name of a home folder in a
 path (`/Users/<redacted>/…`, `/home/<redacted>/…`), and the host's own
 patterns (`CrashesConfiguration.redactions`). Images are named by their file
-name alone, never their path. The reporter collects no personal data
-(`sendDefaultPii` off, no screenshots, no view hierarchy), and sends nothing
-anywhere: the only thing that leaves the device is the issue, filed as the
-signed-in user.
+name alone, never their path, and nothing of the recorder's system
+details beyond the version, the system and the machine's model goes in. The
+recorder reads no memory and no console, and sends nothing anywhere: the
+only thing that leaves the device is the issue, filed as the signed-in
+user.
 
 ## No sign-in
 
@@ -116,11 +119,16 @@ go, as Shake does, and the crashes stay kept; so do they when GitHub can't
 be reached, or refuses the repository (403, 404). A crash GitHub refuses on
 its own (a 422) stays kept, and the next one is filed.
 
-## Symbolication: not yet
+## Symbolication: on the device, as far as it goes
 
-A device rarely has symbols for the app's own code, so frames are mostly
-named by their image and offset (`MyApp + 0x1a2b`), and the binary images
-by their UUID and load address: what symbolicating them against the build's
-dSYMs takes (`atos -o MyApp.dSYM/... -l <load address> <address>`). That is
-left for later (CI keeping each build's dSYMs, and a step that symbolicates
-an issue's frames).
+The recorder names each frame by the symbol the device has for it: the
+system's libraries' always, and the app's own where its executable keeps
+them (a debug build; a release build's exported ones). Where it has none,
+or only the executable's header (`_mh_execute_header`, a stripped
+executable's nearest), a frame is named by its image and offset
+(`MyApp + 0x1a2b`), and the binary images by their UUID and load address:
+what symbolicating them against the build's dSYMs takes
+(`atos -o MyApp.dSYM/... -l <load address> <address>`). That is left for
+later (CI keeping each build's dSYMs, and a step that symbolicates an
+issue's frames). Swift's symbols are shown mangled (`$sSayxSicig`), as the
+recorder writes them.

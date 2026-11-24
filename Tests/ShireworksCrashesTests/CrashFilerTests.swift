@@ -192,7 +192,7 @@ import Testing
     }
 }
 
-/// Started where crashes are caught (iOS and macOS: Sentry's SDK, for real,
+/// Started where crashes are caught (iOS and macOS: KSCrash installed, for real,
 /// with no crash), and nowhere else; started once.
 @MainActor
 @Suite struct ShireworksCrashesStartTests {

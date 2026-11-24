@@ -207,7 +207,7 @@ public enum CrashIssue {
             let image = frame.imageName ?? "?"
             var line = padded(String(index), 4) + padded(image, 32) + address(frame.instructionAddress) + "  "
             let offset = frame.offset.map { image + " + " + CrashReport.hex($0) }
-            if let symbol = frame.symbol, symbol != "<redacted>" {
+            if let symbol = frame.symbolName {
                 line += symbol + (offset.map { " (\($0))" } ?? "")
             } else {
                 line += offset ?? image

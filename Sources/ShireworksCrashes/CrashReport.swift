@@ -10,7 +10,7 @@ import Foundation
 /// address go with it, so a frame can be symbolicated later against the
 /// build's dSYMs (image + offset).
 public struct CrashReport: Codable, Sendable, Equatable, Identifiable {
-    /// The crash's own id (the crash reporter's event id).
+    /// The crash's own id (the crash recorder's report id).
     public var id: String
     /// When the app crashed.
     public var date: Date
@@ -85,14 +85,18 @@ public struct CrashReport: Codable, Sendable, Equatable, Identifiable {
             return instructionAddress - imageAddress
         }
 
-        /// "MyApp + 0x1a2b", or the symbol where known: what names the frame
-        /// in a title and a signature.
-        /// Its symbol, where the device had one (Sentry says `<redacted>` for one it hid).
+        /// Its symbol, where the device had one. Not one that names no
+        /// function: `<redacted>` (a symbol hidden), or the executable's own
+        /// header (`_mh_execute_header`, what the nearest exported symbol of
+        /// a stripped executable is).
         public var symbolName: String? {
-            guard let symbol, !symbol.isEmpty, symbol != "<redacted>" else { return nil }
+            guard let symbol, !symbol.isEmpty, !["<redacted>", "_mh_execute_header", "__mh_execute_header"].contains(symbol)
+            else { return nil }
             return symbol
         }
 
+        /// "MyApp + 0x1a2b", or the symbol where known: what names the frame
+        /// in a title and a signature.
         public var location: String {
             if let symbolName { return symbolName }
             let image = imageName ?? "?"
