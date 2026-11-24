@@ -14,7 +14,7 @@ Four libraries, each building on the ones before it:
 | `IssueComposer` | The SwiftUI issue composer |
 | `ShakeKit` | The shake, the screenshot, the logs, and the composer filled in |
 
-    .package(url: "https://github.com/AttilaTheFun/shake_kit.git", exact: "0.1.0")
+    .package(url: "https://github.com/AttilaTheFun/shake_kit.git", exact: "0.4.0")
 
     .product(name: "ShakeKit", package: "shake_kit")
 
@@ -43,6 +43,26 @@ deliberate request (a Report a Bug button calling `ShakeReport.request()`,
 or, on a Mac, Help › Report a Bug… from `ShakeKitCommands`) says to sign in
 there. ShakeKit runs on Apple's systems only for now.
 
+Put `.shakeToReport` on every window: a request opens the report once, in
+the window made key (on iOS, the scene made active) most recently.
+
+A Mac app whose windows may all be closed (a menu-bar app) adds ShakeKit's
+own report window as a scene, and a button for its menu-bar menu:
+
+    var body: some Scene {
+        MenuBarExtra("App", systemImage: "cloud") {
+            ShakeKitReportButton()   // Report a Bug…
+        }
+        Window("App", id: "main") { MainView().shakeToReport(repository: "owner/app") }
+        ShakeKitReportWindow(repository: "owner/app")
+            .commands { ShakeKitCommands() }
+    }
+
+Help › Report a Bug… and `ShakeKitReportButton` open the report in the key
+window's `.shakeToReport`, or, with none, in `ShakeKitReportWindow` (without
+a screenshot: no window of the app's is open). `ShakeReport.request()` only
+reaches a `.shakeToReport`.
+
 A view that needs the shake itself (a "shake to leave", say) pauses
 ShakeKit's with `.shakeToReportPaused(true)` while it's showing. The pause is a
 SwiftUI preference, and preferences don't cross a presentation: for a view
@@ -54,7 +74,8 @@ On iOS, ShakeKit hears the shake through an override of `UIWindow`'s
 the app's own handling still runs.
 
 0.1.0 shipped `GitHubAuth`, `GitHubIssues` and `IssueComposer`; 0.2.0
-`ShakeKit`; 0.3.0 makes the shared sign-in its only one. `swift test` runs on Linux and on a Mac.
+`ShakeKit`; 0.3.0 makes the shared sign-in its only one; 0.4.0 answers a
+request in one window (the key one) and adds the report window and button. `swift test` runs on Linux and on a Mac.
 
 ## Releasing
 

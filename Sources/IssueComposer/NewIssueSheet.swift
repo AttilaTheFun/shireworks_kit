@@ -4,20 +4,30 @@ import SwiftUI
 /// The issue composer: title, description and attachments, then Create.
 /// `accessory` sits beside the title and description, for the host's own
 /// fields (pickers for kind or priority, say, or a report's device info).
+/// Cancel, or an issue made, closes it: `close` where it isn't a sheet (a
+/// window of its own, which `dismiss` doesn't close), else the
+/// environment's `dismiss`.
 public struct NewIssueSheet<Accessory: View>: View {
     @Bindable var model: IssueComposerModel
     let title: String
     let accessory: Accessory
+    let close: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     public init(
         model: IssueComposerModel,
         title: String = "New Issue",
+        close: (() -> Void)? = nil,
         @ViewBuilder accessory: () -> Accessory
     ) {
         self.model = model
         self.title = title
+        self.close = close
         self.accessory = accessory()
+    }
+
+    private func done() {
+        if let close { close() } else { dismiss() }
     }
 
     public var body: some View {
@@ -56,7 +66,7 @@ public struct NewIssueSheet<Accessory: View>: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         model.saveDraft()
-                        dismiss()
+                        done()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -67,7 +77,7 @@ public struct NewIssueSheet<Accessory: View>: View {
                             Task {
                                 await model.submit()
                                 if model.state == .submitted {
-                                    dismiss()
+                                    done()
                                 }
                             }
                         }
@@ -81,8 +91,8 @@ public struct NewIssueSheet<Accessory: View>: View {
 }
 
 extension NewIssueSheet where Accessory == EmptyView {
-    public init(model: IssueComposerModel, title: String = "New Issue") {
-        self.init(model: model, title: title) { EmptyView() }
+    public init(model: IssueComposerModel, title: String = "New Issue", close: (() -> Void)? = nil) {
+        self.init(model: model, title: title, close: close) { EmptyView() }
     }
 }
 
