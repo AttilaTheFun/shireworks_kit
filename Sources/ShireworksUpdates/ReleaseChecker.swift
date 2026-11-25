@@ -159,6 +159,23 @@ private final class ReleaseSession: @unchecked Sendable {
     static let shared = ReleaseSession()
     private let session: URLSession
 
+    func send(_ request: ReleaseRequest) async throws -> ReleaseAnswer {
+        var urlRequest = URLRequest(url: request.url)
+        for (name, value) in request.headers { urlRequest.setValue(value, forHTTPHeaderField: name) }
+        return try await load(urlRequest)
+    }
+
+    /// The answer `response` and `data` make.
+    private static func answer(_ response: URLResponse?, _ data: Data) throws -> ReleaseAnswer {
+        guard let http = response as? HTTPURLResponse else { throw ReleaseCheckError.notHTTP }
+        var headers: [String: String] = [:]
+        for (name, value) in http.allHeaderFields {
+            if let name = name as? String { headers[name] = "\(value)" }
+        }
+        return ReleaseAnswer(status: http.statusCode, headers: headers, data: data)
+    }
+
+    #if !canImport(IsomerFoundation)
     private init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
@@ -166,23 +183,32 @@ private final class ReleaseSession: @unchecked Sendable {
         session = URLSession(configuration: configuration, delegate: RedirectGuard(), delegateQueue: nil)
     }
 
-    func send(_ request: ReleaseRequest) async throws -> ReleaseAnswer {
-        var urlRequest = URLRequest(url: request.url)
-        for (name, value) in request.headers { urlRequest.setValue(value, forHTTPHeaderField: name) }
-        return try await withCheckedThrowingContinuation { continuation in
-            session.dataTask(with: urlRequest) { data, response, error in
+    private func load(_ request: URLRequest) async throws -> ReleaseAnswer {
+        try await withCheckedThrowingContinuation { continuation in
+            session.dataTask(with: request) { data, response, error in
                 if let error { return continuation.resume(throwing: error) }
-                guard let http = response as? HTTPURLResponse else { return continuation.resume(throwing: ReleaseCheckError.notHTTP) }
-                var headers: [String: String] = [:]
-                for (name, value) in http.allHeaderFields {
-                    if let name = name as? String { headers[name] = "\(value)" }
-                }
-                continuation.resume(returning: ReleaseAnswer(status: http.statusCode, headers: headers, data: data ?? Data()))
+                continuation.resume(with: Result { try Self.answer(response, data ?? Data()) })
             }.resume()
         }
     }
+    #else
+    // Isomer's Foundation (Android, the web): a URLSession with no delegates
+    // and no cache to turn off, its redirects followed by the host's own
+    // HTTP stack.
+    private init() {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        session = URLSession(configuration: configuration)
+    }
+
+    private func load(_ request: URLRequest) async throws -> ReleaseAnswer {
+        let (data, response) = try await session.data(for: request)
+        return try Self.answer(response, data)
+    }
+    #endif
 }
 
+#if !canImport(IsomerFoundation)
 /// Follows a redirect without the token where it leads to another host: an
 /// asset's file is kept elsewhere, at a signed URL that refuses a second
 /// credential.
@@ -194,3 +220,4 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
         completionHandler(next)
     }
 }
+#endif

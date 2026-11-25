@@ -22,7 +22,8 @@
 /// `AppUpdates.register(…)`. Each capability does nothing without its
 /// Info.plist keys (README, "Adopting"). Where there's no Darwin (Linux,
 /// Isomer's hosts), Updates' own `AppUpdates` isn't there to start, and
-/// crashes aren't caught: it does nothing.
+/// crashes aren't caught: it does nothing (`.shireworks()` still puts the
+/// report on an Isomer host's views).
 public enum ShireworksKit {
     /// Whether `start` has run in this process: it runs once, however many
     /// windows' `.shireworks()` appear.

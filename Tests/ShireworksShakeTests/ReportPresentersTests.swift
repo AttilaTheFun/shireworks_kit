@@ -25,6 +25,31 @@ struct ReportPresentersTests {
         #expect(!presenters.answers(main))
     }
 
+    @Test func aRequestIsHandedToTheOneThatAnswers() {
+        let presenters = ReportPresenters()
+        let main = UUID(), settings = UUID()
+        var heard: [String] = []
+        presenters.set(main, active: false) { heard.append("main \($0)") }
+        presenters.set(settings, active: true) { heard.append("settings \($0)") }
+        presenters.deliver(.shake)
+        presenters.remove(settings)
+        presenters.deliver(.request)
+        presenters.remove(main)
+        presenters.deliver(.request)
+        #expect(heard == ["settings shake", "main request"])
+    }
+
+    /// `ShakeReport.request()`'s notification reaches the view that answers, through the shared presenters.
+    @Test func aPostedRequestReachesTheSharedPresenters() async {
+        let id = UUID()
+        var heard: [ShakeReport.Trigger] = []
+        ReportPresenters.shared.set(id, active: true) { heard.append($0) }
+        defer { ReportPresenters.shared.remove(id) }
+        ShakeReport.request()
+        for _ in 0..<200 where heard.isEmpty { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(heard == [.request])
+    }
+
     @Test func twoActiveAtOnceTheLaterAnswers() {
         // An iPad's two scenes side by side, both active.
         let presenters = ReportPresenters()

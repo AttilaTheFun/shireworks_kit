@@ -1,6 +1,10 @@
-// ShakeKit's views, on Apple's systems only for now (Isomer's hosts lack
-// the shake, the screenshot and the keychain it needs).
-#if canImport(UIKit) || canImport(AppKit)
+// ShakeKit's views, wherever there's SwiftUI: Apple's and Isomer's. On
+// Isomer's hosts (Android) a report is asked for by a Report a Bug button
+// (`ShakeKitReportButton`, `ShakeReport.request()`) and opens without a
+// screenshot or logs, until Isomer gives a shake, a screenshot and a
+// keychain (Platform.swift). Help › Report a Bug… and the report window are
+// Apple's (they open windows).
+#if canImport(SwiftUI)
 import GitHubAuth
 import IssueComposer
 import SwiftUI
@@ -12,13 +16,18 @@ extension View {
     /// A shake (or Help › Report a Bug… on a Mac, with `ShakeKitCommands`)
     /// opens a bug report, filed as an issue in `repository` ("owner/name"),
     /// for someone signed in to the host's shared sign-in on this device. A
-    /// build that carries no shared sign-in gets the view back untouched.
+    /// build that doesn't offer reports (`ShakeReport.isOffered`: one that
+    /// carries no shared sign-in, on Apple's systems) and gives no
+    /// `credentials` gets the view back untouched.
     /// Put it on every window: a request opens the report in the one made
-    /// key (or active) most recently, once.
+    /// key (or active) most recently, once. `credentials`, a sign-in of the
+    /// host's own, files in place of the shared one (its token taken to
+    /// reach far enough), for a host without one: Isomer's, for now.
     @ViewBuilder
-    public func shakeToReport(repository: String, configuration: ShakeKitConfiguration = .main) -> some View {
-        if ShakeReport.isOffered {
-            modifier(ShakeToReport(repository: repository, configuration: configuration))
+    public func shakeToReport(repository: String, configuration: ShakeKitConfiguration = .main,
+                              credentials: GitHubCredentials? = nil) -> some View {
+        if credentials != nil || ShakeReport.isOffered {
+            modifier(ShakeToReport(repository: repository, configuration: configuration, credentials: credentials))
         } else {
             self
         }
@@ -29,15 +38,7 @@ extension View {
     /// such view says true, shakes are ignored. The Mac's menu command and
     /// `ShakeReport.request()` still work.
     public func shakeToReportPaused(_ paused: Bool = true) -> some View {
-        preference(key: ShakesPausedKey.self, value: paused)
-    }
-}
-
-/// Whether any view below asks for shakes to be ignored.
-struct ShakesPausedKey: PreferenceKey {
-    static let defaultValue = false
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        value = value || nextValue()
+        askingShakesPaused(paused)
     }
 }
 
@@ -55,23 +56,21 @@ struct ShakeToReport: ViewModifier {
     private var isActive: Bool { scenePhase == .active }
     #endif
 
-    init(repository: String, configuration: ShakeKitConfiguration) {
-        _report = State(initialValue: ShakeReport(repository: repository, configuration: configuration))
+    init(repository: String, configuration: ShakeKitConfiguration, credentials: GitHubCredentials?) {
+        _report = State(initialValue: ShakeReport(repository: repository, configuration: configuration, credentials: credentials))
     }
 
     func body(content: Content) -> some View {
         content
-            .onPreferenceChange(ShakesPausedKey.self) { paused in
-                report.shakesPaused = paused
+            .followingShakePauses(report)
+            .postingShakes()
+            // One view answers a request (ReportPresenters): the key window's, not every window's.
+            .onAppear {
+                let report = report
+                ReportPresenters.shared.set(id, active: isActive) { report.present($0) }
             }
-            .onAppear { ReportPresenters.shared.set(id, active: isActive) }
             .onChange(of: isActive) { _, active in ReportPresenters.shared.set(id, active: active) }
             .onDisappear { ReportPresenters.shared.remove(id) }
-            // One view answers (ReportPresenters): the key window's, not every window's.
-            .onReceive(NotificationCenter.default.publisher(for: ShakeReport.requested)) { notification in
-                guard ReportPresenters.shared.answers(id) else { return }
-                report.present(notification.object as? ShakeReport.Trigger ?? .request)
-            }
             .sheet(isPresented: $report.isPresented) {
                 NewIssueSheet(model: report.composer, title: "Report a Bug") {
                     ReportDetails(report: report)
@@ -85,6 +84,7 @@ struct ShakeToReport: ViewModifier {
     }
 }
 
+#if canImport(UIKit) || canImport(AppKit)
 /// Help › Report a Bug… (⌥⌘B), for a Mac (and an iPad's keyboard), where
 /// there's no shake: the key window's `.shakeToReport` opens the report;
 /// with none (a menu-bar app's windows all closed), the app's
@@ -104,14 +104,18 @@ public struct ShakeKitCommands: Commands {
         }
     }
 }
+#endif
 
 /// Report a Bug…, as a button, for where the menu command isn't: a
-/// menu-bar app's MenuBarExtra, or an app's own Help screen. It does what
-/// Help › Report a Bug… does. Nothing in a build that carries no shared
-/// sign-in.
+/// menu-bar app's MenuBarExtra, an app's own Help screen, or an Isomer
+/// host's, where there's no shake yet. It does what Help › Report a Bug…
+/// does. Nothing in a build that doesn't offer reports
+/// (`ShakeReport.isOffered`).
 public struct ShakeKitReportButton: View {
     let title: String
+    #if canImport(UIKit) || canImport(AppKit)
     @Environment(\.openWindow) private var openWindow
+    #endif
 
     public init(_ title: String = "Report a Bug…") {
         self.title = title
@@ -119,11 +123,18 @@ public struct ShakeKitReportButton: View {
 
     public var body: some View {
         if ShakeReport.isOffered {
-            Button(title) { ShakeReport.request(opening: openWindow) }
+            Button(title) {
+                #if canImport(UIKit) || canImport(AppKit)
+                ShakeReport.request(opening: openWindow)
+                #else
+                ShakeReport.request()
+                #endif
+            }
         }
     }
 }
 
+#if canImport(UIKit) || canImport(AppKit)
 extension ShakeReport {
     /// A deliberate request (the menu command, the button): the key
     /// window's `.shakeToReport` answers it; with none, on a Mac, the app's
@@ -141,6 +152,7 @@ extension ShakeReport {
         request()
     }
 }
+#endif
 
 #if os(macOS)
 /// ShakeKit's own window for a report, for a Mac app whose windows may all
@@ -224,6 +236,11 @@ struct ReportDetails: View {
                 Text(report.environment.markdown)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
+            }
+            if let omission = report.logsOmission {
+                Text(omission)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             if let logs = report.logs {
                 Toggle("Include the app's logs", isOn: $report.includeLogs)

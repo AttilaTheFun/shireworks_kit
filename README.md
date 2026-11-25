@@ -84,6 +84,16 @@ Every production build of an app the owner distributes through Shireworks:
    itself (work in progress, an install of its own) registers
    `AppUpdates.register(autoUpdate:)` before its root view appears
    (docs/updates/Updates.md, "Updating automatically").
+7. **On Android (Isomer's hosts),** links the same `ShireworksKit` and puts
+   the same `.shireworks()` on its root view, which gives it Report a Bug:
+   a `ShakeKitReportButton` (or `ShakeReport.request()`) of the app's
+   opens the report, without a screenshot or the app's logs (the issue
+   says they weren't read). There's no shared sign-in there yet, so a
+   report asks the app's own sign-in
+   (`.shakeToReport(repository:credentials:)`), else says how to sign in.
+   The shake and the screenshot come with Isomer's `.onShake` and its
+   screenshot API; crashes and updates are Apple's systems' only for now
+   (`.shireworks()` starts them, which does nothing there).
 
 ## From update_kit and shake_kit
 
@@ -100,9 +110,10 @@ One pin replaces both; the Info.plist keys and the API are the same.
 update_kit's and shake_kit's tags stay in those repositories, so their pins
 keep resolving until each app moves; then they're archived.
 
-`swift test` passes on Linux and on a Mac. Updates works on Linux and
-Isomer's hosts too; Shake's views are Apple's systems' only for now, and
-Crashes catches crashes on iOS and macOS only.
+`swift test` passes on Linux and on a Mac. Every library builds for
+Isomer's hosts (Android) too: Updates' checks run there, Shake's views and
+`.shireworks()` give Report a Bug (above), and Crashes catches crashes on
+iOS and macOS only.
 
 ## Releasing
 
