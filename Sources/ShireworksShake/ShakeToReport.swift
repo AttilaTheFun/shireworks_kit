@@ -237,6 +237,14 @@ struct ReportDetails: View {
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
             }
+            if report.isReadingLogs {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Reading the app's logs…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             if let omission = report.logsOmission {
                 Text(omission)
                     .font(.caption)

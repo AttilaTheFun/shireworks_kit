@@ -102,13 +102,20 @@ Used without ShakeKit, the composer looks like this:
    composer animates in. On iOS it renders the key window
    (`drawHierarchy(afterScreenUpdates: false)`); on a Mac it caches the key
    window's content view. It covers the app's own windows only, so no
-   screen-recording permission is needed.
+   screen-recording permission is needed. Only the image is taken then; its
+   PNG is made after the composer opens, off the main actor, and attached
+   when ready.
 2. **More screenshots:** the person can dismiss the sheet, go to another
    screen and shake again, and the draft keeps what's there. They can also
    add images from Photos or Files.
 3. **Logs:**
    - from `OSLogStore(scope: .currentProcessIdentifier)`, the last 15
-     minutes, the app's own subsystems only (newest kept);
+     minutes, the app's own subsystems only (newest kept), matched by the
+     store (a predicate);
+   - read after the composer opens, off the main actor: they take most of a
+     second or more, which the sheet never waits for. "Reading the app's
+     logs…" shows until they're in, and Create waits for them (and the
+     screenshot), 15 seconds at most, then files without them, saying so;
    - put in the body, folded in a `<details>` block, since the attachment
      endpoint takes only images and video. The cap keeps the body under
      GitHub's 65,536-character limit.
