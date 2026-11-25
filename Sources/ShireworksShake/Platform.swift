@@ -17,6 +17,9 @@ import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+#if canImport(ImageIO) && (canImport(UIKit) || canImport(AppKit))
+import ImageIO
+#endif
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
@@ -68,10 +71,19 @@ enum Platform {
 
     /// The current process's log lines from `since`, from `subsystems`
     /// (each a prefix), oldest first: "12:00:00.123 [category] message".
+    /// It takes most of a second or more (the store is read through, from
+    /// `since`), so never on the main actor. The subsystems are the store's
+    /// to match (a predicate): every entry of the process read and filtered
+    /// here instead, every framework's too, took 2 to 3 seconds for 3,000
+    /// lines among 23,000, against 0.8 matched by the store.
     static func logLines(since: Date, subsystems: [String]) -> [String] {
         #if canImport(OSLog) && canImport(Darwin)
+        guard !subsystems.isEmpty else { return [] }
+        let matching = NSCompoundPredicate(orPredicateWithSubpredicates: subsystems.map {
+            NSPredicate(format: "subsystem BEGINSWITH %@", $0)
+        })
         guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
-              let entries = try? store.getEntries(at: store.position(date: since)) else { return [] }
+              let entries = try? store.getEntries(at: store.position(date: since), matching: matching) else { return [] }
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -83,24 +95,28 @@ enum Platform {
         #endif
     }
 
-    /// A PNG of the app's key window as it is now, before anything is
-    /// presented over it; nil with none.
+    /// The app's key window as it is now, before anything is presented over
+    /// it, and what makes its PNG: the image is taken here, on the main
+    /// actor; the PNG (the slower part) is made by what's returned, anywhere.
+    /// Nil with no key window.
     @MainActor
-    static func keyWindowPNG() -> Data? {
+    static func keyWindowCapture() -> (@Sendable () -> Data?)? {
         #if canImport(UIKit)
         guard let window = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows)
             .first(where: \.isKeyWindow) else { return nil }
-        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        return renderer.pngData { _ in
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
         }
+        guard let captured = image.cgImage.map(CapturedImage.init) else { return nil }
+        return { captured.png() }
         #elseif canImport(AppKit)
         guard let view = NSApp.keyWindow?.contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
         view.cacheDisplay(in: view.bounds, to: bitmap)
-        return bitmap.representation(using: .png, properties: [:])
+        guard let captured = bitmap.cgImage.map(CapturedImage.init) else { return nil }
+        return { captured.png() }
         #else
         // Isomer's hosts: `IsomerScreenshot.capture()`'s PNG here, once Isomer has it.
         return nil
@@ -127,6 +143,22 @@ enum Platform {
         #endif
     }
 }
+
+#if canImport(ImageIO) && (canImport(UIKit) || canImport(AppKit))
+/// A screenshot's pixels, taken on the main actor and made a PNG elsewhere
+/// (ImageIO's, which any thread may use). Nothing changes the image once
+/// it's taken.
+struct CapturedImage: @unchecked Sendable {
+    let image: CGImage
+
+    func png() -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
+    }
+}
+#endif
 
 #if canImport(SwiftUI)
 extension View {

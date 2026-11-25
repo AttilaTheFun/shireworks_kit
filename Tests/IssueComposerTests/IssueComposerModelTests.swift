@@ -41,6 +41,25 @@ struct IssueComposerModelTests {
         #expect(store.load() == nil)
     }
 
+    /// What the host adds while preparing (a screenshot made after the sheet opened) is uploaded with the issue.
+    @Test func submitWaitsForTheHostToPrepare() async {
+        let recorder = Recorder()
+        let url = assetURL
+        let model = IssueComposerModel(store: MemoryDraftStore(), upload: { _ in url }, submit: { await recorder.record($0) })
+        let png = png
+        model.preparing = { [model] in
+            try? await Task.sleep(for: .milliseconds(50))
+            model.attach(png)
+        }
+        model.draft.title = "Crash"
+        await model.submit()
+
+        let body = await recorder.submissions.first?.body ?? ""
+        #expect(body.contains(url.absoluteString))
+        #expect(!body.contains("couldn't be uploaded"))
+        #expect(model.state == .submitted)
+    }
+
     @Test func failedUploadStillSubmits() async {
         let recorder = Recorder()
         let url = assetURL

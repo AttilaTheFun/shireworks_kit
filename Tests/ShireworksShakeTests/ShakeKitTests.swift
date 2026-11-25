@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import GitHubAuth
 import GitHubIssues
@@ -104,6 +105,26 @@ private struct FixedLogs: LogSource {
     func lines(since: Date, subsystems: [String]) -> [String] { lines }
 }
 
+/// Holds whoever waits on it until the test opens it: a log read or a screenshot's PNG as slow as the test needs.
+private final class Gate: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    func wait() {
+        semaphore.wait()
+        semaphore.signal()
+    }
+    func open() { semaphore.signal() }
+}
+
+/// Logs that take until `gate` opens to read, as OSLogStore's take a second or more.
+private struct SlowLogs: LogSource {
+    let gate: Gate
+    let lines: [String]
+    func lines(since: Date, subsystems: [String]) -> [String] {
+        gate.wait()
+        return lines
+    }
+}
+
 /// A source that reads none here, as AppLogSource on Isomer's hosts.
 private struct UnreadLogs: LogSource {
     func lines(since: Date, subsystems: [String]) -> [String] { [] }
@@ -152,15 +173,104 @@ struct ShakeReportTests {
             screenshot: { Data([0x89, 0x50, 0x4E, 0x47]) })
     }
 
-    @Test func presentAttachesAScreenshotAndGathersLogs() {
+    /// A signed-in report whose logs take until `logs` opens to read, and whose screenshot's PNG until `png` does.
+    private func slowReport(github: FakeGitHub, logs: Gate, png: Gate) -> ShakeReport {
+        let store = MemoryTokenStore(["Ov23example": GitHubToken(access: "gho_fixture", scope: "public_repo")])
+        return ShakeReport(
+            repository: "owner/app", configuration: ShakeKitConfiguration(), shared: nil,
+            credentials: GitHubCredentials(clientID: "Ov23example", scope: "public_repo", store: store),
+            logSource: SlowLogs(gate: logs, lines: ["12:00:00.000 [ui] tapped Save"]), draftStore: MemoryDraftStore(),
+            send: github.send,
+            capture: {
+                { () -> Data? in
+                    png.wait()
+                    return Data([0x89, 0x50, 0x4E, 0x47])
+                }
+            })
+    }
+
+    @Test func presentAttachesAScreenshotAndGathersLogs() async {
         let report = report(github: FakeGitHub())
         report.present()
         #expect(report.isPresented)
+        await report.gathered()
         #expect(report.composer.draft.attachments.map(\.name) == ["screenshot-1.png"])
         #expect(report.logs?.contains("tapped Save") == true)
+        #expect(!report.isReadingLogs)
         // A second shake while it's showing does nothing.
         report.present()
+        await report.gathered()
         #expect(report.composer.draft.attachments.count == 1)
+    }
+
+    /// The sheet opens at once, while the logs are read: they come in after.
+    @Test func presentOpensBeforeSlowLogsAreRead() async {
+        let logs = Gate(), png = Gate()
+        png.open()
+        let report = slowReport(github: FakeGitHub(), logs: logs, png: png)
+        report.present(.shake)
+        #expect(report.isPresented)
+        #expect(report.isReadingLogs)
+        #expect(report.logs == nil && report.logsOmission == nil)
+        logs.open()
+        await report.gathered()
+        #expect(!report.isReadingLogs)
+        #expect(report.logs?.contains("tapped Save") == true)
+    }
+
+    /// The sheet opens at once, while the screenshot's PNG is made: it's attached after.
+    @Test func presentOpensBeforeASlowScreenshotIsMade() async {
+        let logs = Gate(), png = Gate()
+        logs.open()
+        let report = slowReport(github: FakeGitHub(), logs: logs, png: png)
+        report.present(.shake)
+        #expect(report.isPresented)
+        #expect(report.composer.draft.attachments.isEmpty)
+        png.open()
+        await report.gathered()
+        #expect(report.composer.draft.attachments.map(\.name) == ["screenshot-1.png"])
+    }
+
+    /// Created before the logs and the screenshot are in, the issue waits for them and files them both.
+    @Test func filingWaitsForTheLogsAndScreenshotStillComing() async throws {
+        let github = FakeGitHub()
+        let logs = Gate(), png = Gate()
+        let report = slowReport(github: github, logs: logs, png: png)
+        report.present()
+        report.composer.draft.title = "Crash on save"
+        let submitting = Task { await report.composer.submit() }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(report.composer.state == .submitting)
+        #expect(github.requests.isEmpty)
+        png.open()
+        logs.open()
+        await submitting.value
+
+        #expect(report.composer.state == .submitted)
+        let create = try #require(github.requests.first { $0.url.path == "/repos/owner/app/issues" })
+        let body = (try JSONSerialization.jsonObject(with: create.body ?? Data()) as? [String: Any])?["body"] as? String ?? ""
+        #expect(body.contains("tapped Save"))
+        #expect(body.contains("https://github.com/user-attachments/assets/abc"))
+        #expect(!body.contains("couldn't be uploaded"))
+    }
+
+    /// Logs that never come in hold the issue back only so long: it's filed without them, saying so.
+    @Test func filingGivesUpOnLogsAfterTheTimeout() async throws {
+        let github = FakeGitHub()
+        let logs = Gate(), png = Gate()
+        png.open()
+        defer { logs.open() }
+        let report = slowReport(github: github, logs: logs, png: png)
+        report.gatherTimeout = .milliseconds(200)
+        report.present()
+        report.composer.draft.title = "Crash"
+        await report.composer.submit()
+
+        #expect(report.composer.state == .submitted)
+        let create = try #require(github.requests.first { $0.url.path == "/repos/owner/app/issues" })
+        let body = (try JSONSerialization.jsonObject(with: create.body ?? Data()) as? [String: Any])?["body"] as? String ?? ""
+        #expect(body.contains("_\(ShakeReport.logsTooSlow)_"))
+        #expect(!body.contains("tapped Save"))
     }
 
     @Test func signedOutAShakeDoesNothingAndARequestSaysToSignIn() {
@@ -205,11 +315,13 @@ struct ShakeReportTests {
         #expect(report.isPresented)
     }
 
-    @Test func eachShakeAddsTheNextScreenshot() {
+    @Test func eachShakeAddsTheNextScreenshot() async {
         let report = report(github: FakeGitHub())
         report.present()
+        await report.gathered()
         report.isPresented = false
         report.present()
+        await report.gathered()
         #expect(report.composer.draft.attachments.map(\.name) == ["screenshot-1.png", "screenshot-2.png"])
     }
 
@@ -242,6 +354,7 @@ struct ShakeReportTests {
             credentials: GitHubCredentials(clientID: "Ov23example", scope: "public_repo", store: store),
             logSource: UnreadLogs(), draftStore: MemoryDraftStore(), send: github.send, screenshot: { nil })
         report.present()
+        await report.gathered()
         #expect(report.logs == nil)
         #expect(report.logsOmission == AppLogSource.notRead)
         #expect(report.composer.draft.attachments.isEmpty)
@@ -252,9 +365,10 @@ struct ShakeReportTests {
         #expect(body.contains("_\(AppLogSource.notRead)_"))
     }
 
-    @Test func noLogsAreNoOmission() {
+    @Test func noLogsAreNoOmission() async {
         let report = report(github: FakeGitHub(), logs: [])
         report.present()
+        await report.gathered()
         #expect(report.logs == nil && report.logsOmission == nil)
     }
 
