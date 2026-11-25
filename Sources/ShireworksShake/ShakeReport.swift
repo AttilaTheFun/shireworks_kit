@@ -36,9 +36,12 @@ public final class ShakeReport {
         NotificationCenter.default.post(name: requested, object: Trigger.request)
     }
 
-    /// Whether this build offers reports at all: it carries the shared
-    /// sign-in (its Info.plist names one) on a platform ShakeKit runs on.
-    public static var isOffered: Bool { Platform.isSupported && GitHubSharedSignIn.main != nil }
+    /// Whether this build offers reports at all: on Apple's systems, where
+    /// it carries the shared sign-in (its Info.plist names one); on Isomer's
+    /// hosts, always (Report a Bug, filed with the sign-in the host gives
+    /// `.shakeToReport(credentials:)`, else answered with the sign-in
+    /// notice); on Linux, never.
+    public static var isOffered: Bool { Platform.offersReports(shared: GitHubSharedSignIn.main) }
 
     /// "owner/name", where the issue is filed.
     public let repository: String
@@ -62,6 +65,9 @@ public final class ShakeReport {
     public private(set) var environment: ReportEnvironment
     /// The logs as they'll appear in the issue (redacted, capped); nil with none.
     public private(set) var logs: String?
+    /// What the issue says in their place where the logs aren't read on
+    /// this platform (the log source's `omission`); nil where they are.
+    public private(set) var logsOmission: String?
     /// The last issue filed.
     public private(set) var filed: URL?
 
@@ -148,14 +154,16 @@ public final class ShakeReport {
         logs = ReportBody.logs(
             logSource.lines(since: since, subsystems: configuration.logSubsystems),
             limit: configuration.logLimit, redactions: configuration.redactions)
+        logsOmission = logs == nil ? logSource.omission : nil
         isPresented = true
     }
 
     /// Files the issue: what the person wrote, then the app and device, then
-    /// the logs if kept.
+    /// the logs if kept (or why there are none).
     func file(_ submission: IssueSubmission) async throws {
         let body = ReportBody.compose(
-            written: submission.body, environment: environment, logs: includeLogs ? logs : nil)
+            written: submission.body, environment: environment,
+            logs: includeLogs ? logs ?? logsOmission.map { "_\($0)_" } : nil)
         do {
             let issue = try await client.createIssue(
                 in: repository, title: submission.title, body: body, labels: configuration.labels)

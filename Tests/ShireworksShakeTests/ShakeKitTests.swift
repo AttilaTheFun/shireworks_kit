@@ -21,6 +21,30 @@ struct ConfigurationTests {
     }
 }
 
+struct PlatformTests {
+    /// The app's logs are read on Apple's systems alone; elsewhere the report says why there are none.
+    @Test func appLogsReadOnAppleSystemsAlone() {
+        #if canImport(Darwin)
+        #expect(AppLogSource().omission == nil)
+        #else
+        #expect(AppLogSource().omission == AppLogSource.notRead)
+        #expect(AppLogSource().lines(since: .distantPast, subsystems: []).isEmpty)
+        #endif
+    }
+
+    /// Reports are offered by the shared sign-in on Apple's systems, always on Isomer's hosts, never on Linux.
+    @Test func reportsOfferedWhereThereAreViews() {
+        let shared = GitHubSharedSignIn(clientID: "Ov23example", keychainGroup: "group", lockGroup: "lock")
+        #if canImport(UIKit) || canImport(AppKit)
+        #expect(Platform.offersReports(shared: shared) && !Platform.offersReports(shared: nil))
+        #elseif canImport(SwiftUI)
+        #expect(Platform.offersReports(shared: shared) && Platform.offersReports(shared: nil))
+        #else
+        #expect(!Platform.offersReports(shared: shared) && !Platform.offersReports(shared: nil))
+        #endif
+    }
+}
+
 struct ReportBodyTests {
     @Test func redactsTokensEmailsAndQueries() {
         let line = "sent ghp_abcdefghij0123456789 for someone@example.com to https://api.example.com/x?key=secret&b=2"
@@ -78,6 +102,12 @@ extension ReportEnvironment {
 private struct FixedLogs: LogSource {
     let lines: [String]
     func lines(since: Date, subsystems: [String]) -> [String] { lines }
+}
+
+/// A source that reads none here, as AppLogSource on Isomer's hosts.
+private struct UnreadLogs: LogSource {
+    func lines(since: Date, subsystems: [String]) -> [String] { [] }
+    var omission: String? { AppLogSource.notRead }
 }
 
 private final class FakeGitHub: @unchecked Sendable {
@@ -202,6 +232,30 @@ struct ShakeReportTests {
         #expect(body.contains("tapped Save"))
         let upload = try #require(github.requests.first { $0.url.host == "uploads.github.com" })
         #expect(upload.url.query?.contains("repository_id=1234") == true)
+    }
+
+    @Test func logsNotReadHereAreSaidSo() async throws {
+        let github = FakeGitHub()
+        let store = MemoryTokenStore(["Ov23example": GitHubToken(access: "gho_fixture", scope: "public_repo")])
+        let report = ShakeReport(
+            repository: "owner/app", configuration: ShakeKitConfiguration(), shared: nil,
+            credentials: GitHubCredentials(clientID: "Ov23example", scope: "public_repo", store: store),
+            logSource: UnreadLogs(), draftStore: MemoryDraftStore(), send: github.send, screenshot: { nil })
+        report.present()
+        #expect(report.logs == nil)
+        #expect(report.logsOmission == AppLogSource.notRead)
+        #expect(report.composer.draft.attachments.isEmpty)
+        report.composer.draft.title = "Crash"
+        await report.composer.submit()
+        let create = try #require(github.requests.first { $0.url.path == "/repos/owner/app/issues" })
+        let body = (try JSONSerialization.jsonObject(with: create.body ?? Data()) as? [String: Any])?["body"] as? String ?? ""
+        #expect(body.contains("_\(AppLogSource.notRead)_"))
+    }
+
+    @Test func noLogsAreNoOmission() {
+        let report = report(github: FakeGitHub(), logs: [])
+        report.present()
+        #expect(report.logs == nil && report.logsOmission == nil)
     }
 
     @Test func logsLeftOutWhenTurnedOff() async throws {

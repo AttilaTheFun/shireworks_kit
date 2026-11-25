@@ -1,6 +1,6 @@
-// The one view modifier an app adopts the kit by, on Apple's systems (the
-// shake and its report need them, as ShireworksShake's views do).
-#if canImport(SwiftUI) && (canImport(UIKit) || canImport(AppKit))
+// The one view modifier an app adopts the kit by, wherever there's SwiftUI:
+// Apple's systems and Isomer's hosts (Android), as ShireworksShake's views.
+#if canImport(SwiftUI)
 import ShireworksCrashes
 import ShireworksShake
 import SwiftUI
@@ -23,6 +23,12 @@ extension View {
     /// unfiled. On a Mac, Help › Report a Bug… is the scene's
     /// `.commands { ShakeKitCommands() }`, and a menu-bar app adds
     /// `ShakeKitReportWindow` (docs/shake).
+    ///
+    /// On Isomer's hosts (Android) it starts the same, which runs nothing
+    /// there yet (crashes are caught on iOS and macOS, updates heard on
+    /// Apple's systems), and puts the report on the view: Report a Bug
+    /// (`ShakeKitReportButton`, `ShakeReport.request()`) opens it, without a
+    /// shake, screenshot or logs until Isomer has them.
     public func shireworks(repository: String? = nil) -> some View {
         var crashes = CrashesConfiguration.main
         if let repository { crashes.repository = repository }
