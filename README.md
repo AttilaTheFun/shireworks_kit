@@ -90,7 +90,7 @@ Every production build of an app the owner distributes through Shireworks:
    opens the report, without a screenshot or the app's logs (the issue
    says they weren't read). There's no shared sign-in there yet, so a
    report asks the app's own sign-in
-   (`.shakeToReport(repository:credentials:)`), else says how to sign in.
+   (`.shireworks(credentials:)`), else says how to sign in.
    The shake and the screenshot come with Isomer's `.onShake` and its
    screenshot API; crashes and updates are Apple's systems' only for now
    (`.shireworks()` starts them, which does nothing there).

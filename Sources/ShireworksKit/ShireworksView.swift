@@ -1,6 +1,7 @@
 // The one view modifier an app adopts the kit by, wherever there's SwiftUI:
 // Apple's systems and Isomer's hosts (Android), as ShireworksShake's views.
 #if canImport(SwiftUI)
+import GitHubAuth
 import ShireworksCrashes
 import ShireworksShake
 import SwiftUI
@@ -29,20 +30,25 @@ extension View {
     /// Apple's systems), and puts the report on the view: Report a Bug
     /// (`ShakeKitReportButton`, `ShakeReport.request()`) opens it, without a
     /// shake, screenshot or logs until Isomer has them.
-    public func shireworks(repository: String? = nil) -> some View {
+    ///
+    /// `credentials`, a sign-in of the app's own, files reports in place of
+    /// the shared one (`.shakeToReport(credentials:)`): for a host without
+    /// the shared sign-in, Isomer's for now. Crashes keep the shared one.
+    public func shireworks(repository: String? = nil, credentials: GitHubCredentials? = nil) -> some View {
         var crashes = CrashesConfiguration.main
         if let repository { crashes.repository = repository }
-        return modifier(ShireworksModifier(crashes: crashes))
+        return modifier(ShireworksModifier(crashes: crashes, credentials: credentials))
     }
 }
 
 struct ShireworksModifier: ViewModifier {
     let crashes: CrashesConfiguration
+    let credentials: GitHubCredentials?
 
     @ViewBuilder
     private func shake(_ content: Content) -> some View {
         if let repository = crashes.repository {
-            content.shakeToReport(repository: repository)
+            content.shakeToReport(repository: repository, credentials: credentials)
         } else {
             content
         }
