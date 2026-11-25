@@ -1,0 +1,1 @@
+- `.shireworks(repository:credentials:)`: an app with a sign-in of its own (an Isomer host's, for now) files its reports with it through the one modifier, in place of `.shireworks()` and a separate `.shakeToReport(credentials:)` (#8). Crashes keep the shared sign-in.
