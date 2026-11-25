@@ -1,0 +1,1 @@
+- **No release check on Isomer hosts yet** (NCH's review of #5): ReleaseChecker's default transport refuses (`ReleaseCheckError.notOnThisHost`) where Isomer's Foundation stands in, since its URLSession has no redirect guard and an asset's download redirects to a signed URL on another host; until that's handled, the token is never sent there.

@@ -192,9 +192,10 @@ private final class ReleaseSession: @unchecked Sendable {
         }
     }
     #else
-    // Isomer's Foundation (Android, the web): a URLSession with no delegates
-    // and no cache to turn off, its redirects followed by the host's own
-    // HTTP stack.
+    // Isomer's Foundation (Android, the web): a URLSession with no delegates, so no RedirectGuard. An asset's
+    // download redirects to a signed URL on another host, and whether the host's own HTTP stack drops the token on
+    // the way isn't known there (NCH's review of #5). So nothing is sent until that's handled (redirects not
+    // followed, or no token to asset URLs): refused, saying so.
     private init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -202,8 +203,7 @@ private final class ReleaseSession: @unchecked Sendable {
     }
 
     private func load(_ request: URLRequest) async throws -> ReleaseAnswer {
-        let (data, response) = try await session.data(for: request)
-        return try Self.answer(response, data)
+        throw ReleaseCheckError.notOnThisHost
     }
     #endif
 }

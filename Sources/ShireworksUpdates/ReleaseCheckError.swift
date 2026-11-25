@@ -11,4 +11,7 @@ public enum ReleaseCheckError: Error, Sendable, Equatable {
     case notHTTP
     /// The releases' answer could not be read.
     case unreadableReleases
+    /// This host's transport can't yet keep the token from following an asset's redirect to another host (Isomer's
+    /// Foundation: Android, the web), so it asks nothing.
+    case notOnThisHost
 }
