@@ -81,7 +81,15 @@ public final class AppUpdates {
     /// After `.deferUntilReady`: the app is ready, so the update goes ahead
     /// now (the app asks Applications and quits).
     public static func readyToUpdate() async {
-        do { try await responder?.readyToUpdate() } catch { log.error("Not updated: \(String(describing: error), privacy: .public)") }
+        guard let responder else {
+            log.error("Not updated: AppUpdates.start hasn't run")
+            return
+        }
+        do {
+            if let why = try await responder.readyToUpdate() { log.notice("Nothing to update: \(why, privacy: .public)") }
+        } catch {
+            log.error("Not updated: \(String(describing: error), privacy: .public)")
+        }
     }
 
     /// After `.installMyself`: the app is installing the bundle it was given
