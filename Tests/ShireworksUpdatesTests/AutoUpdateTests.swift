@@ -219,6 +219,36 @@ final class AutoUpdateTests: XCTestCase {
         XCTAssertEqual(events.suffix(2), ["open Applications", "terminate"])
     }
 
+    // Nimbus 0.19.1 on a Mac (2026-11-27): the first go-ahead's install never happened, the offer stayed goAhead, and
+    // every later readiness did nothing. A goAhead whose build still isn't running is given again; nothing done says why.
+    func testAStaleGoAheadIsGivenAgainAndNothingDoneSaysWhy() async throws {
+        let store = store(), system = FakeSystem()
+        var why = try await responder(store, system: system, handler: { _ in .deferUntilReady }).readyToUpdate()
+        XCTAssertEqual(why, "no offer for \(visor)")
+        _ = try await store.makeOffer(bundleID: visor, version: "0.40.1", build: "1", offeredBy: "com.example.Applications")
+        let responder = responder(store, system: system, handler: { _ in .deferUntilReady })
+        try await responder.launched()
+        try await responder.look()
+        why = try await responder.readyToUpdate()
+        XCTAssertNil(why, "deferred, so it goes ahead")
+        var offer = try await store.offer(bundleID: visor)
+        XCTAssertEqual(offer?.state, .goAhead)
+        // The request taken and dropped: the app is still the old build, the offer still goAhead.
+        _ = try await store.takeInstallRequests()
+        why = try await responder.readyToUpdate()
+        XCTAssertNil(why, "a stale go-ahead is given again")
+        let requests = try await store.installRequests()
+        XCTAssertEqual(requests.map(\.bundleID), [visor], "asked again")
+        let events = await system.events
+        XCTAssertEqual(events.filter { $0 == "open Applications" }.count, 2)
+        // Another state: nothing, saying which.
+        _ = try await store.moveOffer(bundleID: visor, version: "0.40.1", build: "1", from: [.goAhead], to: .declined)
+        why = try await responder.readyToUpdate()
+        XCTAssertEqual(why, "the offer of 0.40.1 is declined, not deferred")
+        offer = try await store.offer(bundleID: visor)
+        XCTAssertEqual(offer?.state, .declined)
+    }
+
     func testAHandlerDeclinesSayingWhy() async throws {
         let store = store(), system = FakeSystem()
         _ = try await store.makeOffer(bundleID: visor, version: "0.40.1", build: "1", offeredBy: "com.example.Applications")

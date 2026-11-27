@@ -135,14 +135,30 @@ public final class OfferResponder {
         }
     }
 
-    /// After deferring: the app is ready, so it goes ahead now. Nothing
-    /// when there's no deferred offer.
-    public func readyToUpdate() async throws {
-        guard let offer = try await store.offer(bundleID: app.bundleID),
-              try await store.moveOffer(bundleID: offer.bundleID, version: offer.version, build: offer.build, from: [.deferred],
-                                        to: .goAhead) else { return }
-        await system.databaseChanged()
+    /// After deferring: the app is ready, so it goes ahead now. A go-ahead
+    /// already given whose build still isn't the one running (its install
+    /// request taken and dropped, or never carried out) is given again, so a
+    /// stale one can't leave every later readiness doing nothing (Nimbus
+    /// 0.19.1 on a Mac, 2026-11-27: a restart every 15 minutes, each a no-op).
+    /// Why nothing was done, or nil when it went ahead: for the app to log.
+    @discardableResult
+    public func readyToUpdate() async throws -> String? {
+        guard let offer = try await store.offer(bundleID: app.bundleID) else { return "no offer for \(app.bundleID)" }
+        guard app.appVersion < offer.appVersion else {
+            return "the offer of \(offer.version) is \(offer.state.rawValue), and \(app.appVersion) runs, which isn't older"
+        }
+        switch offer.state {
+        case .deferred:
+            guard try await store.moveOffer(bundleID: offer.bundleID, version: offer.version, build: offer.build, from: [.deferred],
+                                            to: .goAhead) else { return "the offer of \(offer.version) changed meanwhile" }
+            await system.databaseChanged()
+        case .goAhead:
+            break
+        default:
+            return "the offer of \(offer.version) is \(offer.state.rawValue), not deferred"
+        }
         try await goAhead(offer)
+        return nil
     }
 
     /// The app is installing the bundle it was handed (just before it

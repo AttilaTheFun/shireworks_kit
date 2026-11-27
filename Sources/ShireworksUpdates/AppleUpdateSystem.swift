@@ -1,5 +1,6 @@
 #if canImport(Darwin)
 import Foundation
+import os
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -29,12 +30,21 @@ struct AppleUpdateSystem: UpdateSystem {
     @MainActor
     func openApplications() async throws {
         #if canImport(AppKit) && !canImport(UIKit)
+        // Each step said (a go-ahead that ends here leaves nothing else behind: Nimbus 0.19.1, 2026-11-27).
+        let log = Logger(subsystem: "UpdateKit", category: "install")
         guard let url = applicationsBundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first else {
+            log.error("No app to install the update: none of \(applicationsBundleIDs.joined(separator: ", "), privacy: .public) found")
             throw UpdateInstallError.applicationsNotInstalled
         }
+        log.notice("Asking \(url.path, privacy: .public) to install the update")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        do {
+            _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        } catch {
+            log.error("\(url.path, privacy: .public) couldn't be opened: \(String(describing: error), privacy: .public)")
+            throw error
+        }
         #else
         throw UpdateInstallError.applicationsNotInstalled
         #endif
